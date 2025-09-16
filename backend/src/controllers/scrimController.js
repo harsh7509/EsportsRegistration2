@@ -22,6 +22,7 @@ export const createScrimValidation = [
 
 const TZ = 'Asia/Kolkata';
 
+
 // ---------- Delete Scrim ----------
 export const deleteScrim = async (req, res) => {
   try {
@@ -67,6 +68,10 @@ export const createScrim = async (req, res) => {
       prizePool,
       room,
     } = req.body;
+
+    const capacityN   = Number(capacity) || 100;
+const entryFeeN   = Number(entryFee) || 0;
+const prizePoolN  = Number(prizePool) || 0;
 
     // Normalize timeSlot: accept either full ISO or separate time strings with AM/PM
     let normalizedTimeSlot = { start: null, end: null };
@@ -124,11 +129,11 @@ export const createScrim = async (req, res) => {
         start: normalizedTimeSlot.start,
         end: normalizedTimeSlot.end,
       },
-      capacity: capacity || 100,
-      entryFee: entryFee || 0,
-      prizePool: prizePool || 0,
-      isPaid: !!(entryFee && entryFee > 0),
-      price: entryFee || 0,
+      capacity: capacityN,
+  entryFee: entryFeeN,
+  prizePool: prizePoolN,
+  isPaid: entryFeeN > 0,
+  price: entryFeeN,
       room: encryptedRoom,
       createdBy: req.user._id,
     });
@@ -269,6 +274,7 @@ export const getScrimDetails = async (req, res) => {
 };
 
 // ---------- Book Scrim ----------
+// ---------- Book Scrim ----------
 export const bookScrim = async (req, res) => {
   const session = await mongoose.startSession();
   await session.startTransaction();
@@ -281,56 +287,58 @@ export const bookScrim = async (req, res) => {
     const scrim = await Scrim.findById(scrimId).session(session);
     if (!scrim) throw new Error('Scrim not found');
 
-    if (scrim.status !== 'upcoming') throw new Error('Cannot book non-upcoming scrim');
+    // Time window: can book only between start and end
+    // Booking allowed any time BEFORE the scrim starts
+const start = new Date(scrim.timeSlot?.start || scrim.date);
+const now   = new Date();
 
-    const scrimDateTime = new Date(scrim.timeSlot?.start || scrim.date);
-    const now = new Date();
-    if (scrimDateTime < now) throw new Error('Cannot book past scrims');
+if (now > start) {
+  throw new Error('Booking closed — scrim already started');
+}
 
-    if (scrim.participants.length >= scrim.capacity) throw new Error('Scrim is full');
+
+
+    // Optionally allow booking when status is 'upcoming' OR 'ongoing'
+    if (!['upcoming', 'ongoing'].includes(scrim.status)) {
+      throw new Error('Cannot book this scrim at the moment');
+    }
+
+    if (Array.isArray(scrim.participants) && scrim.participants.length >= scrim.capacity) {
+      throw new Error('Scrim is full');
+    }
 
     const existingBooking = await Booking.findOne({
       scrimId,
       playerId,
       status: 'active',
     }).session(session);
-
     if (existingBooking) throw new Error('Already booked');
 
+    // add participant
     scrim.participants.push(playerId);
     await scrim.save({ session });
 
-    const booking = await Booking.create(
-      [
-        {
-          scrimId,
-          playerId,
-          playerInfo,
-        },
-      ],
-      { session }
-    );
+    const [booking] = await Booking.create([{ scrimId, playerId, playerInfo }], { session });
 
     await session.commitTransaction();
     session.endSession();
 
+    // handle payment / room add exactly as you had
     if (scrim.entryFee > 0) {
-      await Payment.create({
-        scrimId,
-        playerId,
-        amount: scrim.entryFee,
-        status: 'pending',
-      });
+      await Payment.create({ scrimId, playerId, amount: scrim.entryFee, status: 'pending' });
     } else {
       const room = await Room.findOne({ scrimId });
       if (room) {
-        room.participants.push({ userId: playerId });
-        await room.save();
+        const exists = room.participants?.some(p => String(p.userId) === String(playerId));
+        if (!exists) {
+          room.participants.push({ userId: playerId });
+          await room.save();
+        }
       }
     }
 
     res.json({
-      booking: booking[0],
+      booking,
       message: 'Successfully booked scrim',
       requiresPayment: scrim.entryFee > 0,
     });
@@ -338,9 +346,10 @@ export const bookScrim = async (req, res) => {
     await session.abortTransaction();
     session.endSession();
     console.error('Booking error:', error);
-    res.status(400).json({ message: error.message });
+    res.status(400).json({ message: error.message || 'Booking failed' });
   }
 };
+
 
 // ---------- Room Credentials ----------
 export const getRoomCredentials = async (req, res) => {

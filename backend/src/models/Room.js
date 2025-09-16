@@ -19,8 +19,25 @@ const ParticipantSchema = new mongoose.Schema({
 
 const RoomSchema = new mongoose.Schema({
   scrimId:      { type: mongoose.Schema.Types.ObjectId, ref: 'Scrim', default: null }, // optional for tournaments
-  tournamentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Tournament', default: null },
-  groupName:    { type: String, required: true }, // <-- make it required (no empty '')
+  // For tournament group rooms (no scrimId)
+  tournamentId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Tournament',
+    default: null,
+    required: function () { return !this.scrimId; } // only required if not a scrim room
+  },
+   groupId: {
+    type: mongoose.Schema.Types.ObjectId,
+    default: null,
+    required: function () { return !this.scrimId; } // only required if not a scrim room
+  },
+   createdBy:    { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  groupName: {
+    type: String,
+    default: null,
+    // only required for tournament rooms
+    required: function () { return !this.scrimId; }
+  }, // <-- make it required (no empty '')
   roomId: {
     type: String,
     default: () => `RM-${Date.now()}-${Math.floor(Math.random() * 10000)}`
@@ -34,6 +51,13 @@ const RoomSchema = new mongoose.Schema({
     credentialsRevealed: { type: Boolean, default: false }
   }
 }, { timestamps: true }); // <-- use timestamps instead of manual createdAt
+
+
+// Conditional required: if it's a tournament room, groupId is required.
+RoomSchema.path('groupId').validate(function (v) {
+  if (this.tournamentId && !v) return false;
+  return true;
+}, 'groupId is required for tournament rooms');
 
 // INDEXES
 // 1) One room per scrim (but allow many tournament rooms where scrimId is null)

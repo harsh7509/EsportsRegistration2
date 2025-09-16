@@ -209,6 +209,10 @@ export const tournamentsAPI = {
     api.patch(`/tournaments/${tid}/my-group/room/messages/${mid}`, body),
   deleteMyGroupRoomMessage: (tid, mid) =>
     api.delete(`/tournaments/${tid}/my-group/room/messages/${mid}`),
+
+  deleteGroupRoom: (tid, gid) =>
+  api.delete(`/tournaments/${tid}/groups/${gid}/room`),
+  deleteGroup: (tid, gid) => api.delete(`/tournaments/${tid}/groups/${gid}`),
 };
 
 

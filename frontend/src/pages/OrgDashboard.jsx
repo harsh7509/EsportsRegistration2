@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { scrimsAPI, uploadAPI, tournamentsAPI } from '../services/api';
 import ScrimCard from '../components/ScrimCard';
 import CreateScrimModal from '../components/CreateScrimModal';
+import { formatDateTime, formatTimeRange } from '../utils/datetime';
 import { Link } from 'react-router-dom';
 
 const OrgDashboard = () => {
@@ -36,16 +37,16 @@ const OrgDashboard = () => {
   const fileInputRef = useRef(null);
 
   // ---- effects ----
- useEffect(() => {
-  fetchMyTournaments();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, []);
+  useEffect(() => {
+    fetchMyTournaments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
-  if (!user?._id && !user?.id) return;
-  fetchOrgScrims();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [user?._id, user?.id]);
+    if (!user?._id && !user?.id) return;
+    fetchOrgScrims();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?._id, user?.id]);
 
 
   const fetchOrgScrims = async () => {
@@ -71,35 +72,35 @@ const OrgDashboard = () => {
     }
   };
 
-const fetchMyTournaments = async () => {
-  try {
-    setLoadingTournaments(true);
+  const fetchMyTournaments = async () => {
+    try {
+      setLoadingTournaments(true);
 
-    // Get everything (active), then optionally filter on client
-    const res = await tournamentsAPI.list({ limit: 200, active: 'true' });
+      // Get everything (active), then optionally filter on client
+      const res = await tournamentsAPI.list({ limit: 200, active: 'true' });
 
-    // Safety: your API returns { items, total, ... }
-    const items = Array.isArray(res?.data) ? res.data : (res?.data?.items || []);
+      // Safety: your API returns { items, total, ... }
+      const items = Array.isArray(res?.data) ? res.data : (res?.data?.items || []);
 
-    // TEMP: show all
-    setMyTournaments(items);
+      // TEMP: show all
+      setMyTournaments(items);
 
-    // If you only want this org's tournaments, use this instead:
-    const me = user?._id || user?.id;
-    const mine = items.filter(t => {
-      const owner =
-        t.createdBy ||
-        (typeof t.organizationId === 'string' ? t.organizationId : t.organizationId?._id);
-      return me && String(owner) === String(me);
-    });
-    setMyTournaments(mine);
-  } catch (e) {
-    console.error('Failed to fetch tournaments:', e);
-    setMyTournaments([]);
-  } finally {
-    setLoadingTournaments(false);
-  }
-};
+      // If you only want this org's tournaments, use this instead:
+      const me = user?._id || user?.id;
+      const mine = items.filter(t => {
+        const owner =
+          t.createdBy ||
+          (typeof t.organizationId === 'string' ? t.organizationId : t.organizationId?._id);
+        return me && String(owner) === String(me);
+      });
+      setMyTournaments(mine);
+    } catch (e) {
+      console.error('Failed to fetch tournaments:', e);
+      setMyTournaments([]);
+    } finally {
+      setLoadingTournaments(false);
+    }
+  };
 
 
 
@@ -114,6 +115,18 @@ const fetchMyTournaments = async () => {
     s?.timeSlot?.start ? new Date(s.timeSlot.start) : (s?.date ? new Date(s.date) : null);
   const getEnd = (s) =>
     s?.timeSlot?.end ? new Date(s.timeSlot.end) : getStart(s);
+
+
+
+  // NEW: always derive the status from timeSlot/date
+  const deriveStatus = (s, now = new Date()) => {
+    const start = getStart(s);
+    const end = getEnd(s);
+    if (!start) return 'upcoming'; // if missing dates, treat as upcoming
+    if (end && end < now) return 'completed';
+    if (start > now) return 'upcoming';
+    return 'ongoing';
+  };
 
   const now = new Date();
   const byDate = {
@@ -132,9 +145,10 @@ const fetchMyTournaments = async () => {
   };
 
   // prefer status buckets; if empty (no status set), fallback to date buckets
-  const upcomingScrims = byStatus.upcoming.length ? byStatus.upcoming : byDate.upcoming;
-  const ongoingScrims = byStatus.ongoing.length ? byStatus.ongoing : byDate.ongoing;
-  const completedScrims = byStatus.completed.length ? byStatus.completed : byDate.completed;
+
+  const upcomingScrims = scrims.filter(s => deriveStatus(s, now) === 'upcoming');
+  const ongoingScrims = scrims.filter(s => deriveStatus(s, now) === 'ongoing');
+  const completedScrims = scrims.filter(s => deriveStatus(s, now) === 'completed');
 
   const stats = {
     totalScrims: scrims.length,
@@ -197,6 +211,8 @@ const fetchMyTournaments = async () => {
   const tabClasses = (on) =>
     `py-2 px-1 border-b-2 font-medium text-sm ${on ? 'border-gaming-purple text-gaming-purple' : 'border-transparent text-gray-400 hover:text-gray-300'
     }`;
+
+
 
   // ---- skeleton ----
   const SkeletonGrid = () => (
@@ -303,7 +319,11 @@ const fetchMyTournaments = async () => {
                   )}
                   <div className="font-semibold">{t.title}</div>
                   <div className="text-xs text-gray-400">
-                    {t.startAt ? new Date(t.startAt).toLocaleString() : 'TBA'}
+                    {t.startAt
+                      ? (t.endAt
+                        ? formatTimeRange(t.startAt, t.endAt)
+                        : formatDateTime(t.startAt))
+                      : 'TBA'}
                   </div>
                   <div className="flex gap-2 mt-3">
                     <Link to={`/tournaments/${t._id}`} className="btn-secondary">View</Link>

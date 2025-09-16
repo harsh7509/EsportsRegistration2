@@ -67,9 +67,9 @@ const CreateScrimModal = ({ isOpen, onClose, onScrimCreated }) => {
           start: startTime.toISOString(),
           end: endTime.toISOString()
         },
-        capacity: parseInt(formData.capacity),
-        entryFee: parseFloat(formData.entryFee) || 0,
-        prizePool: formData.prizePool
+        capacity: parseInt(formData.capacity, 10),
+  entryFee: parseFloat(formData.entryFee) || 0,
+  prizePool: parseFloat(formData.prizePool) || 0, 
       };
 
       await scrimsAPI.create(scrimData);

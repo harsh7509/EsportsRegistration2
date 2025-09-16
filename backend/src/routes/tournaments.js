@@ -26,6 +26,8 @@ import {
   deleteGroupRoomMessage,
   editMyGroupRoomMessage,
   deleteMyGroupRoomMessage,
+  deleteGroupRoom,
+  deleteGroup,
 } from '../controllers/TournamentController.js';
 
 const router = express.Router();
@@ -68,6 +70,8 @@ router.post('/:id/groups/:groupId/members', authenticate, addGroupMember);
 router.post('/:id/groups/:groupId/room', authenticate, createGroupRoom);
 router.get('/:id/groups/:groupId/room/messages', authenticate, getGroupRoomMessages);
 router.post('/:id/groups/:groupId/room/messages', authenticate, sendGroupRoomMessage);
+router.delete('/:id/groups/:groupId/room', authenticate, deleteGroupRoom);
+router.delete('/:id/groups/:groupId', authenticate, deleteGroup);
 
 // player/self (correct middleware name)
 router.get('/:id/my-group', authenticate, getMyGroup);

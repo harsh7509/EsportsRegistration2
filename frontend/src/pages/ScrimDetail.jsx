@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useNavigate, useParams, Link } from 'react-router-dom';
 import { Calendar, Users, Trophy, DollarSign, Lock, ExternalLink, MessageSquare, Star, Trash2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
@@ -15,11 +15,17 @@ import toast from 'react-hot-toast';
 
 const ScrimDetail = () => {
   const { id } = useParams();
+  const navigate = useNavigate();
+
   const { user, isAuthenticated } = useAuth();
   const { socket } = useSocket();
+
+  // ---------- state (all hooks at top-level) ----------
+  const [nowTs, setNowTs] = useState(Date.now());
   const [scrim, setScrim] = useState(null);
   const [isBooked, setIsBooked] = useState(false);
   const [loading, setLoading] = useState(true);
+
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [roomCredentials, setRoomCredentials] = useState(null);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -28,43 +34,11 @@ const ScrimDetail = () => {
   const [showRoom, setShowRoom] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showOrgRatingModal, setShowOrgRatingModal] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
 
-  useEffect(() => {
-    fetchScrimDetails();
-  }, [id]);
-
-  useEffect(() => {
-    if (socket && scrim) {
-      socket.emit('join-scrim', scrim._id);
-
-      socket.on('scrim:participant_added', (data) => {
-        if (data.scrimId === scrim._id) {
-          setScrim(prev => ({
-            ...prev,
-            participants: [...prev.participants, data.participant]
-          }));
-          toast.success('New participant joined!');
-        }
-      });
-
-      socket.on('scrim:points_updated', (data) => {
-        if (data.scrimId === scrim._id) {
-          setScrim(prev => ({
-            ...prev,
-            pointsTableUrl: data.pointsTableUrl
-          }));
-          toast.success('Points table updated!');
-        }
-      });
-
-      return () => {
-        socket.off('scrim:participant_added');
-        socket.off('scrim:points_updated');
-      };
-    }
-  }, [socket, scrim]);
-
-  const fetchScrimDetails = async () => {
+  // ---------- helpers ----------
+  // Hoisted function declaration → safe to call in effects above/below
+  async function fetchScrimDetails() {
     try {
       const response = await scrimsAPI.getDetails(id);
       setScrim(response.data.scrim);
@@ -75,8 +49,106 @@ const ScrimDetail = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }
 
+  // Booking allowed only before start time when status is 'upcoming'
+  const bookingOpen = (() => {
+    if (!scrim) return false;
+    const start = new Date(scrim?.timeSlot?.start || scrim?.date);
+    const now = new Date();
+    return now <= start && scrim.status === 'upcoming';
+  })();
+
+  // (optional) window open between start and end; kept for parity with your logic
+  const bookingWindowOpen = React.useMemo(() => {
+    if (!scrim) return false;
+    const start = scrim?.timeSlot?.start
+      ? new Date(scrim.timeSlot.start)
+      : (scrim?.date ? new Date(scrim.date) : null);
+    const end = scrim?.timeSlot?.end
+      ? new Date(scrim.timeSlot.end)
+      : (start ? new Date(start.getTime() + 2 * 60 * 60 * 1000) : null);
+    if (!start || !end) return false;
+    const now = new Date(nowTs);
+    return now >= start && now <= end && scrim.status !== 'completed';
+  }, [scrim, nowTs]);
+
+  // ---------- effects ----------
+  // Load details on id change
+  useEffect(() => {
+    fetchScrimDetails();
+  }, [id]);
+
+  // Tick every 30s
+  useEffect(() => {
+    const t = setInterval(() => setNowTs(Date.now()), 30_000);
+    return () => clearInterval(t);
+  }, []);
+
+  // Socket subscriptions for this scrim
+  useEffect(() => {
+    if (!socket || !scrim?._id) return;
+
+    socket.emit('join-scrim', scrim._id);
+
+    const onAdded = (data) => {
+      if (data?.scrimId === scrim._id) {
+        setScrim((prev) => ({
+          ...prev,
+          participants: [...(prev?.participants || []), data.participant],
+        }));
+        toast.success('New participant joined!');
+      }
+    };
+
+    const onPoints = (data) => {
+      if (data?.scrimId === scrim._id) {
+        setScrim((prev) => ({ ...prev, pointsTableUrl: data.pointsTableUrl }));
+        toast.success('Points table updated!');
+      }
+    };
+
+    socket.on('scrim:participant_added', onAdded);
+    socket.on('scrim:points_updated', onPoints);
+
+    return () => {
+      socket.off('scrim:participant_added', onAdded);
+      socket.off('scrim:points_updated', onPoints);
+    };
+  }, [socket, scrim]);
+
+  // ---------- guards (after all hooks) ----------
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gaming-purple" />
+      </div>
+    );
+  }
+
+  if (!scrim) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-red-400 mb-4">Scrim Not Found</h2>
+          <Link to="/scrims" className="btn-primary">Back to Scrims</Link>
+        </div>
+      </div>
+    );
+  }
+
+  // ---------- derived ----------
+  const isFull = (scrim.participants?.length || 0) >= (scrim.capacity || 0);
+  const isOwner = user && scrim.createdBy?._id === user.id;
+
+  const canBook =
+    isAuthenticated &&
+    user?.role === 'player' &&
+    !isBooked &&
+    !isFull &&
+    bookingOpen;
+
+  // ---------- handlers ----------
   const handleViewRoom = async () => {
     try {
       const response = await scrimsAPI.getRoomCredentials(id);
@@ -88,13 +160,12 @@ const ScrimDetail = () => {
 
   const handleBookingSuccess = () => {
     setIsBooked(true);
-    
-    // Check if payment is required
     if (scrim.entryFee > 0) {
       setShowBookingModal(false);
       setShowPaymentModal(true);
     } else {
-      fetchScrimDetails(); // Refresh to get updated participant count
+      // Free scrim → refresh to update participant count
+      fetchScrimDetails();
     }
   };
 
@@ -112,41 +183,22 @@ const ScrimDetail = () => {
     fetchScrimDetails();
   };
 
-  const handleDeleteScrim = async () => {
+  const handleDeleteScrim = async (scrimId) => {
+    if (deletingId) return; // lock
+    setDeletingId(scrimId);
     try {
-      await scrimsAPI.deleteScrim(scrim._id);
+      await scrimsAPI.deleteScrim(scrimId);
       toast.success('Scrim deleted successfully');
-      navigate('/dashboard/org');
-    } catch (error) {
-      toast.error('Failed to delete scrim');
+      setShowDeleteConfirm(false);
+      navigate('/scrims');
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Failed to delete scrim');
+    } finally {
+      setDeletingId(null);
     }
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gaming-purple"></div>
-      </div>
-    );
-  }
-
-  if (!scrim) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold text-red-400 mb-4">Scrim Not Found</h2>
-          <Link to="/scrims" className="btn-primary">
-            Back to Scrims
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
-  const isFull = scrim.participants?.length >= scrim.capacity;
-  const isOwner = user && scrim.createdBy?._id === user.id;
-  const canBook = isAuthenticated && user?.role === 'player' && !isBooked && !isFull && scrim.status === 'upcoming';
-
+  // ---------- render ----------
   return (
     <div className="min-h-screen py-8">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -161,7 +213,7 @@ const ScrimDetail = () => {
               </div>
             )}
           </div>
-          
+
           <div className="flex flex-wrap gap-4 text-sm text-gray-400">
             <div className="flex items-center">
               <Calendar className="h-4 w-4 mr-1" />
@@ -186,8 +238,8 @@ const ScrimDetail = () => {
             {/* Promo Image */}
             {scrim.promoImageUrl && (
               <div className="rounded-lg overflow-hidden">
-                <img 
-                  src={scrim.promoImageUrl} 
+                <img
+                  src={scrim.promoImageUrl}
                   alt={scrim.title}
                   className="w-full h-64 object-cover"
                 />
@@ -206,7 +258,7 @@ const ScrimDetail = () => {
             {scrim.pointsTableUrl && (
               <div className="card">
                 <h2 className="text-xl font-semibold mb-4">Points Table</h2>
-                <a 
+                <a
                   href={scrim.pointsTableUrl}
                   target="_blank"
                   rel="noopener noreferrer"
@@ -224,7 +276,7 @@ const ScrimDetail = () => {
             {/* Booking Card */}
             <div className="card">
               <h3 className="text-lg font-semibold mb-4">Join This Scrim</h3>
-              
+
               <div className="space-y-3 mb-6">
                 <div className="flex justify-between">
                   <span className="text-gray-400">Game:</span>
@@ -237,7 +289,7 @@ const ScrimDetail = () => {
                 <div className="flex justify-between">
                   <span className="text-gray-400">Time:</span>
                   <span>
-                    {new Date(scrim.timeSlot?.start).toLocaleTimeString()} - 
+                    {new Date(scrim.timeSlot?.start).toLocaleTimeString()} -
                     {new Date(scrim.timeSlot?.end).toLocaleTimeString()}
                   </span>
                 </div>
@@ -250,12 +302,12 @@ const ScrimDetail = () => {
                   <span>{scrim.participants?.length || 0} / {scrim.capacity}</span>
                 </div>
                 <div className="w-full bg-gray-700 rounded-full h-2">
-                  <div 
+                  <div
                     className="bg-gaming-purple h-2 rounded-full transition-all duration-300"
-                    style={{ 
-                      width: `${((scrim.participants?.length || 0) / scrim.capacity) * 100}%` 
+                    style={{
+                      width: `${((scrim.participants?.length || 0) / scrim.capacity) * 100}%`
                     }}
-                  ></div>
+                  />
                 </div>
               </div>
 
@@ -266,10 +318,7 @@ const ScrimDetail = () => {
                     <div className="bg-green-900/20 border border-green-500/30 rounded-lg p-3 text-center">
                       <span className="text-green-400 font-medium">✓ You're registered!</span>
                     </div>
-                    <button
-                      onClick={handleViewRoom}
-                      className="w-full btn-primary"
-                    >
+                    <button onClick={handleViewRoom} className="w-full btn-primary">
                       <Lock className="h-4 w-4 mr-2" />
                       View Room Credentials
                     </button>
@@ -311,9 +360,16 @@ const ScrimDetail = () => {
                     disabled
                     className="w-full bg-gray-600 text-gray-400 py-2 px-4 rounded-lg cursor-not-allowed"
                   >
-                    {!isAuthenticated ? 'Login to Book' : 
-                     isFull ? 'Scrim Full' : 
-                     user?.role !== 'player' ? 'Players Only' : 'Cannot Book'}
+                    {!isAuthenticated
+                      ? 'Login to Book'
+                      : isFull
+                        ? 'Scrim Full'
+                        : user?.role !== 'player'
+                          ? 'Players Only'
+                          : !bookingOpen
+                            ? `Booking closed — starts at ${new Date(scrim.timeSlot?.start || scrim.date)
+                              .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                            : 'Cannot Book'}
                   </button>
                 )}
 
@@ -360,10 +416,7 @@ const ScrimDetail = () => {
         {/* Scrim Management Section */}
         {isOwner && showManagement && (
           <div className="mt-8">
-            <ScrimManagement 
-              scrim={scrim} 
-              onScrimUpdate={handleScrimUpdate}
-            />
+            <ScrimManagement scrim={scrim} onScrimUpdate={handleScrimUpdate} />
           </div>
         )}
 
@@ -380,7 +433,7 @@ const ScrimDetail = () => {
             <div className="bg-gray-800 rounded-lg max-w-md w-full p-6">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-lg font-semibold">Room Credentials</h3>
-                <button 
+                <button
                   onClick={() => setRoomCredentials(null)}
                   className="text-gray-400 hover:text-white"
                 >
@@ -416,10 +469,7 @@ const ScrimDetail = () => {
                 </div>
               </div>
 
-              <button
-                onClick={() => setRoomCredentials(null)}
-                className="w-full btn-primary"
-              >
+              <button onClick={() => setRoomCredentials(null)} className="w-full btn-primary">
                 Got it!
               </button>
             </div>
@@ -475,10 +525,12 @@ const ScrimDetail = () => {
                   Cancel
                 </button>
                 <button
-                  onClick={handleDeleteScrim}
-                  className="flex-1 bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded-lg transition-colors"
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => handleDeleteScrim(scrim._id)}
+                  disabled={deletingId === scrim._id}
                 >
-                  Delete
+                  {deletingId === scrim._id ? 'Deleting…' : 'Delete'}
                 </button>
               </div>
             </div>
