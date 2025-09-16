@@ -13,9 +13,10 @@ const ScrimCard = ({ scrim }) => {
   };
 
   const isFull = scrim.participants?.length >= scrim.capacity;
+  const isPast = new Date(scrim.date) < new Date();
 
   return (
-    <div className="card hover:border-gaming-purple transition-all duration-300 group">
+    <div className={`card hover:border-gaming-purple transition-all duration-300 group ${isPast ? 'opacity-60' : ''}`}>
       {scrim.promoImageUrl && (
         <div className="mb-4 rounded-lg overflow-hidden">
           <img 
@@ -46,6 +47,7 @@ const ScrimCard = ({ scrim }) => {
         <div className="flex items-center text-sm text-gray-300">
           <Calendar className="h-4 w-4 mr-2 text-gaming-cyan" />
           {formatDate(scrim.date)}
+          {isPast && <span className="ml-2 text-red-400 text-xs">(Past)</span>}
         </div>
         
         <div className="flex items-center text-sm text-gray-300">

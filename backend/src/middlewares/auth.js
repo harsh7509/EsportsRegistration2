@@ -3,7 +3,8 @@ import User from '../models/User.js';
 
 export const authenticate = async (req, res, next) => {
   try {
-    const token = req.header('Authorization')?.replace('Bearer ', '');
+    const raw = req.header('Authorization') || '';
+    const token = raw.startsWith('Bearer ') ? raw.slice(7) : '';
     
     if (!token) {
       return res.status(401).json({ message: 'Access denied. No token provided.' });
@@ -36,3 +37,15 @@ export const roleGuard = (roles) => {
     next();
   };
 };
+
+export const verifyToken = (req, res, next) => {
+  try {
+    const raw = req.headers.authorization || '';
+    const token = raw.startsWith('Bearer ') ? raw.slice(7) : '';
+    if (!token) return res.status(401).json({ message: 'No token' });
+    req.user = jwt.verify(token, process.env.JWT_SECRET);
+    next();
+  } catch (e) {
+    return res.status(401).json({ message: 'Invalid/expired token' });
+  }
+};  

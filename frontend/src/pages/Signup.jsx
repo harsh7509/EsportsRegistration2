@@ -23,6 +23,9 @@ const Signup = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    console.log('📝 Signup form submitted:', formData);
+    
     const result = await register(formData);
     
     if (result.success) {

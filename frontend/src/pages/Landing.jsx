@@ -119,6 +119,9 @@ const Landing = () => {
                 <ScrimCard key={scrim._id} scrim={scrim} />
               ))}
             </div>
+            {topScrims.filter(s => s.entryFee === 0).length === 0 && (
+              <p className="text-gray-500 text-center py-8">No free scrims available</p>
+            )}
           </div>
 
           {/* ₹25 Scrims */}
@@ -129,6 +132,9 @@ const Landing = () => {
                 <ScrimCard key={scrim._id} scrim={scrim} />
               ))}
             </div>
+            {topScrims.filter(s => s.entryFee === 25).length === 0 && (
+              <p className="text-gray-500 text-center py-8">No ₹25 scrims available</p>
+            )}
           </div>
 
           {/* ₹50 Scrims */}
@@ -139,6 +145,9 @@ const Landing = () => {
                 <ScrimCard key={scrim._id} scrim={scrim} />
               ))}
             </div>
+            {topScrims.filter(s => s.entryFee === 50).length === 0 && (
+              <p className="text-gray-500 text-center py-8">No ₹50 scrims available</p>
+            )}
           </div>
 
           {/* ₹60+ Premium Scrims */}
@@ -149,6 +158,9 @@ const Landing = () => {
                 <ScrimCard key={scrim._id} scrim={scrim} />
               ))}
             </div>
+            {topScrims.filter(s => s.entryFee >= 60).length === 0 && (
+              <p className="text-gray-500 text-center py-8">No premium scrims available</p>
+            )}
           </div>
         </div>
       </section>

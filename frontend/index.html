@@ -5,6 +5,35 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Esports Platform</title>
+
+    <!-- Debug overlay: shows first runtime error so you don't get a white screen -->
+    <style>
+      #__global_error__ {
+        position: fixed; inset: auto 8px 8px 8px; 
+        background:#111827; color:#fca5a5; border:1px solid #374151;
+        padding:12px; border-radius:8px; font: 12px/1.4 monospace; 
+        max-height: 40vh; overflow:auto; z-index: 999999; display:none;
+      }
+      #__global_error__ b { color:#f87171 }
+      #__global_error__.show { display:block }
+    </style>
+    <script>
+      (function(){
+        const box = document.createElement('div');
+        box.id = '__global_error__';
+        box.innerHTML = '<b>Runtime error</b><pre id="__global_error_pre__"></pre>';
+        document.addEventListener('DOMContentLoaded',()=>document.body.appendChild(box));
+        function show(err){
+          const pre = document.getElementById('__global_error_pre__');
+          if(!pre) return;
+          pre.textContent = (err && (err.stack || err.message || String(err))) || 'Unknown error';
+          box.classList.add('show');
+          console.error('[GlobalError]', err);
+        }
+        window.addEventListener('error', e => show(e.error || e.message));
+        window.addEventListener('unhandledrejection', e => show(e.reason || e));
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

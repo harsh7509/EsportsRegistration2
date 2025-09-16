@@ -1,75 +1,123 @@
-import React from 'react'
-import { Routes, Route } from 'react-router-dom'
-import { Toaster } from 'react-hot-toast'
+import React, { Suspense, lazy } from 'react';
+import { Routes, Route } from 'react-router-dom';
+import { Toaster } from 'react-hot-toast';
+import OrgTournamentCreate from './pages/OrgTournamentCreate';
+import TournamentDetail from './pages/TournamentDetails';
+import TournamentList from './pages/TournamentList';
 
-// Components
-import Navbar from './components/Navbar'
-import ProtectedRoute from './components/ProtectedRoute'
-import RoleGuard from './components/RoleGuard'
+import EditTournament from './pages/EditTournament';
+import TournamentManage from './pages/TournamentManage';
 
-// Pages
-import Landing from './pages/Landing'
-import Login from './pages/Login'
-import Signup from './pages/Signup'
-import ScrimList from './pages/ScrimList'
-import ScrimDetail from './pages/ScrimDetail'
-import PlayerDashboard from './pages/PlayerDashboard'
-import OrgDashboard from './pages/OrgDashboard'
-import Rankings from './pages/Rankings'
-import AdminPanel from './pages/AdminPanel'
+
+
+import ErrorBoundary from './ErrorBoundary';
+
+// Lazy-load everything except the top nav so one bad page can't blank the app
+const Navbar = lazy(() => import('./components/Navbar'));
+const ProtectedRoute = lazy(() => import('./components/ProtectedRoute'));
+const RoleGuard = lazy(() => import('./components/RoleGuard'));
+
+const Landing = lazy(() => import('./pages/Landing'));
+const Login = lazy(() => import('./pages/Login'));
+const Signup = lazy(() => import('./pages/Signup'));
+const ScrimList = lazy(() => import('./pages/ScrimList'));
+const ScrimDetail = lazy(() => import('./pages/ScrimDetail'));
+const PlayerDashboard = lazy(() => import('./pages/PlayerDashboard'));
+const OrgDashboard = lazy(() => import('./pages/OrgDashboard'));
+const Rankings = lazy(() => import('./pages/Rankings'));
+const AdminPanel = lazy(() => import('./pages/AdminPanel'));
+const OrganizationProfile = lazy(() => import('./pages/OrganizationProfile'));
+const NotFound = lazy(() => import('./pages/NotFound'));
+
+
+const Fallback = ({ label = 'Loading…' }) => (
+  <div style={{ padding: 16, opacity: 0.8 }}>{label}</div>
+);
 
 function App() {
   return (
     <div className="min-h-screen bg-gaming-dark text-white">
-      <Navbar />
+      {/* TEMP heartbeat: proves the shell rendered; remove later */}
+      <div style={{ position: 'fixed', bottom: 12, right: 12, fontSize: 12, opacity: 0.7, zIndex: 10 }}>
+        UI loaded ✅
+      </div>
+
+      <Suspense fallback={<Fallback label="Loading navbar…" />}>
+        <ErrorBoundary>
+          <Navbar />
+        </ErrorBoundary>
+      </Suspense>
+
       <main>
-        <Routes>
-          <Route path="/" element={<Landing />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/signup" element={<Signup />} />
-          <Route path="/scrims" element={<ScrimList />} />
-          <Route path="/scrims/:id" element={<ScrimDetail />} />
-          <Route path="/rankings" element={<Rankings />} />
-          
-          {/* Protected Routes */}
-          <Route path="/dashboard/player" element={
-            <ProtectedRoute>
-              <RoleGuard allowedRoles={['player']}>
-                <PlayerDashboard />
-              </RoleGuard>
-            </ProtectedRoute>
-          } />
-          
-          <Route path="/dashboard/org" element={
-            <ProtectedRoute>
-              <RoleGuard allowedRoles={['organization']}>
-                <OrgDashboard />
-              </RoleGuard>
-            </ProtectedRoute>
-          } />
-          
-          <Route path="/admin" element={
-            <ProtectedRoute>
-              <RoleGuard allowedRoles={['admin']}>
-                <AdminPanel />
-              </RoleGuard>
-            </ProtectedRoute>
-          } />
-        </Routes>
+        <Suspense fallback={<Fallback label="Loading page…" />}>
+          <ErrorBoundary>
+            <Routes>
+              <Route path="/" element={<Landing />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/signup" element={<Signup />} />
+              <Route path="/scrims" element={<ScrimList />} />
+              <Route path="/scrims/:id" element={<ScrimDetail />} />
+              <Route path="/rankings" element={<Rankings />} />
+              <Route path="/organizations/:orgId" element={<OrganizationProfile />} />
+              <Route path="/tournaments/new" element={<OrgTournamentCreate />} />
+              <Route path="/tournaments/:id" element={<TournamentDetail />} />
+              <Route path="/tournaments" element={<TournamentList />} />
+              <Route path="/tournaments/:id/edit" element={<EditTournament />} />
+             
+<Route path="/tournaments/:id/manage" element={<TournamentManage />} />
+
+
+
+              {/* Protected */}
+              <Route
+                path="/admin"
+                element={
+                  <ProtectedRoute>
+                    <RoleGuard allowedRoles={['admin']}>
+                      <AdminPanel />
+                    </RoleGuard>
+                  </ProtectedRoute>
+                }
+              />
+
+              <Route
+                path="/dashboard/player"
+                element={
+                  <ProtectedRoute>
+                    <RoleGuard allowedRoles={['player']}>
+                      <PlayerDashboard />
+                    </RoleGuard>
+                  </ProtectedRoute>
+                }
+              />
+
+              <Route
+                path="/dashboard/org"
+                element={
+                  <ProtectedRoute>
+                    <RoleGuard allowedRoles={['organization']}>
+                      <OrgDashboard />
+                    </RoleGuard>
+                  </ProtectedRoute>
+                }
+              />
+
+              {/* 404 */}
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </ErrorBoundary>
+        </Suspense>
       </main>
-      <Toaster 
+
+      <Toaster
         position="top-right"
         toastOptions={{
           duration: 4000,
-          style: {
-            background: '#1f2937',
-            color: '#fff',
-            border: '1px solid #374151'
-          }
+          style: { background: '#1f2937', color: '#fff', border: '1px solid #374151' }
         }}
       />
     </div>
-  )
+  );
 }
 
-export default App
+export default App;

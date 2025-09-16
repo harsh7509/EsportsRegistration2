@@ -8,7 +8,8 @@ import BookingModal from '../components/BookingModal';
 import PaymentModal from '../components/PaymentModal';
 import ScrimManagement from '../components/ScrimManagement';
 import RoomView from '../components/RoomView';
-import RatingModal from '../components/RatingModal';
+import RatingModal from '../components/RateOrgModal';
+import OrgRatingModal from '../components/OrgRatingModal';
 import { scrimsAPI } from '../services/api';
 import toast from 'react-hot-toast';
 
@@ -26,6 +27,7 @@ const ScrimDetail = () => {
   const [showRatingModal, setShowRatingModal] = useState(false);
   const [showRoom, setShowRoom] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showOrgRatingModal, setShowOrgRatingModal] = useState(false);
 
   useEffect(() => {
     fetchScrimDetails();
@@ -287,6 +289,15 @@ const ScrimDetail = () => {
                         Rate Scrim
                       </button>
                     )}
+                    {scrim.status === 'completed' && (
+                      <button
+                        onClick={() => setShowOrgRatingModal(true)}
+                        className="w-full bg-purple-600 hover:bg-purple-700 text-white py-2 px-4 rounded-lg transition-colors"
+                      >
+                        <Star className="h-4 w-4 mr-2" />
+                        Rate Organization
+                      </button>
+                    )}
                   </>
                 ) : canBook ? (
                   <button
@@ -436,6 +447,15 @@ const ScrimDetail = () => {
           scrim={scrim}
           isOpen={showRatingModal}
           onClose={() => setShowRatingModal(false)}
+          onRatingSubmitted={handleRatingSubmitted}
+        />
+
+        {/* Organization Rating Modal */}
+        <OrgRatingModal
+          organization={scrim.createdBy}
+          scrim={scrim}
+          isOpen={showOrgRatingModal}
+          onClose={() => setShowOrgRatingModal(false)}
           onRatingSubmitted={handleRatingSubmitted}
         />
 

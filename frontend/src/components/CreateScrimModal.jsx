@@ -152,6 +152,7 @@ const CreateScrimModal = ({ isOpen, onClose, onScrimCreated }) => {
                 rows={3}
                 className="input w-full resize-none"
                 placeholder="Describe your scrim..."
+                min={new Date().toISOString().split('T')[0]}
                 value={formData.description}
                 onChange={handleChange}
               />

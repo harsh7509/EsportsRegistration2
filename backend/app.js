@@ -1,13 +1,18 @@
+// backend/src/app.js
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
+import path from 'path';
 
-// Import routes
-import authRoutes from './src/routes/auth.js';
-import scrimRoutes from './src/routes/scrims.js';
+// Routes (adjust paths if your route files are located elsewhere)
+import authRoutes from './routes/auth.js';
+import scrimRoutes from './routes/scrims.js';
+import orgRoutes from './routes/organizations.js';
+import adminRoutes from './routes/admin.js';
+import uploadRoutes from './routes/upload.js';
 
 dotenv.config();
 
@@ -22,36 +27,38 @@ app.use(cors({
 
 // Rate limiting
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100 // limit each IP to 100 requests per windowMs
+  windowMs: 15 * 60 * 1000,
+  max: 100
 });
 app.use(limiter);
 
-// Body parsing middleware
+// Body parsing
 app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Serve uploads statically (for local fallback)
+app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/scrims', scrimRoutes);
+app.use('/api/organizations', orgRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/upload', uploadRoutes);
 
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'OK', timestamp: new Date().toISOString() });
-});
+// Health
+app.get('/api/health', (req, res) => res.json({ status: 'OK', timestamp: new Date().toISOString() }));
 
-// Error handling middleware
+// Error handler
 app.use((err, req, res, next) => {
   console.error(err.stack);
-  res.status(500).json({ 
+  res.status(500).json({
     message: 'Something went wrong!',
     ...(process.env.NODE_ENV === 'development' && { error: err.message })
   });
 });
 
-// 404 handler
-app.use('*', (req, res) => {
-  res.status(404).json({ message: 'Route not found' });
-});
+// 404
+app.use('*', (req, res) => res.status(404).json({ message: 'Route not found' }));
 
 export default app;

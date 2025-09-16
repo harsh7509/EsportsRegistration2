@@ -1,5 +1,8 @@
+// backend/src/controllers/scrimController.js
 import mongoose from 'mongoose';
 import { body, validationResult } from 'express-validator';
+import moment from 'moment-timezone';
+
 import Scrim from '../models/Scrim.js';
 import Booking from '../models/Booking.js';
 import Room from '../models/Room.js';
@@ -7,27 +10,36 @@ import Payment from '../models/Payment.js';
 import User from '../models/User.js';
 import { encrypt, decrypt } from '../utils/crypto.js';
 
+// ---------- Validation ----------
+export const createScrimValidation = [
+  body('title').trim().isLength({ min: 3 }).withMessage('Title must be at least 3 characters'),
+  body('game').trim().notEmpty().withMessage('Game is required'),
+  body('date').optional().isISO8601().withMessage('Valid date required'),
+  body('timeSlot.start').optional().isISO8601().withMessage('Valid start time required'),
+  body('timeSlot.end').optional().isISO8601().withMessage('Valid end time required'),
+  body('capacity').optional().isInt({ min: 2, max: 100 }).withMessage('Capacity must be between 2 and 100'),
+];
+
+const TZ = 'Asia/Kolkata';
+
+// ---------- Delete Scrim ----------
 export const deleteScrim = async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user._id;
 
     const scrim = await Scrim.findById(id);
-    if (!scrim) {
-      return res.status(404).json({ message: 'Scrim not found' });
-    }
+    if (!scrim) return res.status(404).json({ message: 'Scrim not found' });
 
-    // Check if user is the owner
     if (scrim.createdBy.toString() !== userId.toString()) {
       return res.status(403).json({ message: 'Only scrim owner can delete' });
     }
 
-    // Delete related data
     await Promise.all([
       Booking.deleteMany({ scrimId: id }),
       Room.deleteOne({ scrimId: id }),
       Payment.deleteMany({ scrimId: id }),
-      Scrim.findByIdAndDelete(id)
+      Scrim.findByIdAndDelete(id),
     ]);
 
     res.json({ message: 'Scrim deleted successfully' });
@@ -37,32 +49,68 @@ export const deleteScrim = async (req, res) => {
   }
 };
 
-export const createScrimValidation = [
-  body('title').trim().isLength({ min: 3 }).withMessage('Title must be at least 3 characters'),
-  body('game').trim().notEmpty().withMessage('Game is required'),
-  body('date').isISO8601().withMessage('Valid date required'),
-  body('timeSlot.start').isISO8601().withMessage('Valid start time required'),
-  body('timeSlot.end').isISO8601().withMessage('Valid end time required'),
-  body('capacity').isInt({ min: 2, max: 100 }).withMessage('Capacity must be between 2 and 100')
-];
-
+// ---------- Create Scrim (AM/PM safe) ----------
 export const createScrim = async (req, res) => {
   try {
     const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
-    const { title, description, game, platform, date, timeSlot, capacity, entryFee, prizePool, room } = req.body;
+    const {
+      title,
+      description,
+      game,
+      platform,
+      date,            // 'YYYY-MM-DD'
+      timeSlot,        // can be ISO start/end OR {startTimeStr:'06:00',startAmpm:'PM',endTimeStr:'08:00',endAmpm:'PM'}
+      capacity,
+      entryFee,
+      prizePool,
+      room,
+    } = req.body;
+
+    // Normalize timeSlot: accept either full ISO or separate time strings with AM/PM
+    let normalizedTimeSlot = { start: null, end: null };
+
+    if (timeSlot?.start && timeSlot?.end) {
+      // ISO strings or Date-like → interpret in TZ to keep intended local time
+      normalizedTimeSlot.start = moment.tz(timeSlot.start, TZ).toDate();
+      normalizedTimeSlot.end = moment.tz(timeSlot.end, TZ).toDate();
+    } else if (date && timeSlot && (timeSlot.startTimeStr || timeSlot.startRaw)) {
+      const startStr = timeSlot.startTimeStr || timeSlot.startRaw; // '06:00'
+      const endStr = timeSlot.endTimeStr || timeSlot.endRaw;       // '08:00'
+      const startAmpm = timeSlot.startAmpm || '';                  // 'AM' | 'PM' | ''
+      const endAmpm = timeSlot.endAmpm || '';
+
+      if (startStr) {
+        const startInput = `${date} ${startStr} ${startAmpm}`.trim();
+        const startFmt = startAmpm ? 'YYYY-MM-DD hh:mm A' : 'YYYY-MM-DD HH:mm';
+        normalizedTimeSlot.start = moment.tz(startInput, startFmt, TZ).toDate();
+      }
+      if (endStr) {
+        const endInput = `${date} ${endStr} ${endAmpm}`.trim();
+        const endFmt = endAmpm ? 'YYYY-MM-DD hh:mm A' : 'YYYY-MM-DD HH:mm';
+        normalizedTimeSlot.end = moment.tz(endInput, endFmt, TZ).toDate();
+      }
+    } else if (date) {
+      // Only date → full day range in TZ
+      const start = moment.tz(date, 'YYYY-MM-DD', TZ).startOf('day');
+      const end = moment(start).endOf('day');
+      normalizedTimeSlot.start = start.toDate();
+      normalizedTimeSlot.end = end.toDate();
+    } else {
+      // Fallback
+      normalizedTimeSlot.start = new Date();
+      normalizedTimeSlot.end = moment().add(2, 'hours').toDate();
+    }
 
     // Encrypt room password if provided
     let encryptedRoom = {};
-    if (room && room.password) {
+    if (room?.password) {
       const encrypted = encrypt(room.password);
       encryptedRoom = {
         id: room.id,
         password: JSON.stringify(encrypted),
-        revealToParticipants: false
+        revealToParticipants: false,
       };
     }
 
@@ -71,32 +119,39 @@ export const createScrim = async (req, res) => {
       description,
       game,
       platform,
-      date,
-      timeSlot,
-      capacity,
+      date: date ? moment.tz(date, 'YYYY-MM-DD', TZ).toDate() : (normalizedTimeSlot.start || new Date()),
+      timeSlot: {
+        start: normalizedTimeSlot.start,
+        end: normalizedTimeSlot.end,
+      },
+      capacity: capacity || 100,
       entryFee: entryFee || 0,
-      prizePool,
-      isPaid: (entryFee && entryFee > 0),
+      prizePool: prizePool || 0,
+      isPaid: !!(entryFee && entryFee > 0),
       price: entryFee || 0,
       room: encryptedRoom,
-      createdBy: req.user._id
+      createdBy: req.user._id,
     });
 
     await scrim.save();
     await scrim.populate('createdBy', 'name organizationInfo');
 
-    // Create associated room
+    // Ensure associated room
     const roomData = {
       scrimId: scrim._id,
       roomId: room?.id || `scrim-${scrim._id}`,
       password: encryptedRoom.password || null,
       settings: {
         onlyOrgCanMessage: true,
-        autoRevealCredentials: false
-      }
+        autoRevealCredentials: false,
+      },
     };
 
-    await Room.create(roomData);
+    const existingRoom = await Room.findOne({ scrimId: scrim._id });
+    if (!existingRoom) {
+      await Room.create(roomData);
+    }
+
     res.status(201).json({ scrim });
   } catch (error) {
     console.error('Create scrim error:', error);
@@ -104,6 +159,7 @@ export const createScrim = async (req, res) => {
   }
 };
 
+// ---------- List Scrims (single, paginated version) ----------
 export const getScrimsList = async (req, res) => {
   try {
     const {
@@ -113,12 +169,12 @@ export const getScrimsList = async (req, res) => {
       sort = 'rank',
       page = 1,
       limit = 12,
-      status = 'upcoming',
-      entryFee
+      status,
+      entryFee,
     } = req.query;
 
-    const filter = { status };
-
+    const filter = {};
+    if (status && status !== 'all') filter.status = status;
     if (game) filter.game = new RegExp(game, 'i');
     if (platform) filter.platform = new RegExp(platform, 'i');
     if (date) {
@@ -128,8 +184,10 @@ export const getScrimsList = async (req, res) => {
       filter.date = { $gte: startDate, $lt: endDate };
     }
     if (entryFee) {
-      if (entryFee === 'free') filter.entryFee = 0;
-      else if (entryFee === 'paid') filter.entryFee = { $gt: 0 };
+      if (entryFee === '0') filter.entryFee = 0;
+      else if (entryFee === '25') filter.entryFee = 25;
+      else if (entryFee === '50') filter.entryFee = 50;
+      else if (entryFee === '60+') filter.entryFee = { $gte: 60 };
     }
 
     let sortOption = {};
@@ -154,7 +212,7 @@ export const getScrimsList = async (req, res) => {
 
     const scrims = await Scrim.find(filter)
       .populate('createdBy', 'name organizationInfo')
-      .select('-room.password') // Never include room password in list
+      .select('-room.password')
       .sort(sortOption)
       .skip(skip)
       .limit(parseInt(limit));
@@ -165,7 +223,7 @@ export const getScrimsList = async (req, res) => {
       items: scrims,
       total,
       page: parseInt(page),
-      totalPages: Math.ceil(total / parseInt(limit))
+      totalPages: Math.ceil(total / parseInt(limit)),
     });
   } catch (error) {
     console.error('Get scrims error:', error);
@@ -173,6 +231,7 @@ export const getScrimsList = async (req, res) => {
   }
 };
 
+// ---------- Scrim Details ----------
 export const getScrimDetails = async (req, res) => {
   try {
     const { id } = req.params;
@@ -183,29 +242,23 @@ export const getScrimDetails = async (req, res) => {
       .populate('participants', 'name')
       .populate('ratings.playerId', 'name');
 
-    if (!scrim) {
-      return res.status(404).json({ message: 'Scrim not found' });
-    }
+    if (!scrim) return res.status(404).json({ message: 'Scrim not found' });
 
-    // Check if user is booked
     let isBooked = false;
     let booking = null;
     if (userId) {
-      booking = await Booking.findOne({ 
-        scrimId: id, 
-        playerId: userId, 
-        status: 'active' 
+      booking = await Booking.findOne({
+        scrimId: id,
+        playerId: userId,
+        status: 'active',
       }).populate('playerId', 'name email');
       isBooked = !!booking;
     }
 
-    // Remove room password from response unless user is authorized
     const scrimData = scrim.toObject();
     if (scrimData.room && scrimData.room.password) {
       const isOwner = userId && scrim.createdBy._id.toString() === userId.toString();
-      if (!isOwner && !isBooked) {
-        delete scrimData.room.password;
-      }
+      if (!isOwner && !isBooked) delete scrimData.room.password;
     }
 
     res.json({ scrim: scrimData, isBooked, booking });
@@ -215,6 +268,7 @@ export const getScrimDetails = async (req, res) => {
   }
 };
 
+// ---------- Book Scrim ----------
 export const bookScrim = async (req, res) => {
   const session = await mongoose.startSession();
   await session.startTransaction();
@@ -225,54 +279,49 @@ export const bookScrim = async (req, res) => {
     const playerId = req.user._id;
 
     const scrim = await Scrim.findById(scrimId).session(session);
-    if (!scrim) {
-      throw new Error('Scrim not found');
-    }
+    if (!scrim) throw new Error('Scrim not found');
 
-    if (scrim.status !== 'upcoming') {
-      throw new Error('Cannot book non-upcoming scrim');
-    }
+    if (scrim.status !== 'upcoming') throw new Error('Cannot book non-upcoming scrim');
 
-    // Check capacity
-    if (scrim.participants.length >= scrim.capacity) {
-      throw new Error('Scrim is full');
-    }
+    const scrimDateTime = new Date(scrim.timeSlot?.start || scrim.date);
+    const now = new Date();
+    if (scrimDateTime < now) throw new Error('Cannot book past scrims');
 
-    // Check duplicate booking
-    const existingBooking = await Booking.findOne({ 
-      scrimId, 
+    if (scrim.participants.length >= scrim.capacity) throw new Error('Scrim is full');
+
+    const existingBooking = await Booking.findOne({
+      scrimId,
       playerId,
-      status: 'active'
+      status: 'active',
     }).session(session);
 
-    if (existingBooking) {
-      throw new Error('Already booked');
-    }
+    if (existingBooking) throw new Error('Already booked');
 
-    // Add participant atomically
     scrim.participants.push(playerId);
     await scrim.save({ session });
 
-    // Create booking with player info
-    const booking = await Booking.create([{
-      scrimId,
-      playerId,
-      playerInfo
-    }], { session });
+    const booking = await Booking.create(
+      [
+        {
+          scrimId,
+          playerId,
+          playerInfo,
+        },
+      ],
+      { session }
+    );
 
     await session.commitTransaction();
     session.endSession();
 
-    // If has entry fee, create payment record
     if (scrim.entryFee > 0) {
       await Payment.create({
         scrimId,
         playerId,
         amount: scrim.entryFee,
-        status: 'pending'
+        status: 'pending',
       });
     } else {
-      // For free scrims, add to room immediately
       const room = await Room.findOne({ scrimId });
       if (room) {
         room.participants.push({ userId: playerId });
@@ -280,31 +329,28 @@ export const bookScrim = async (req, res) => {
       }
     }
 
-    res.json({ 
+    res.json({
       booking: booking[0],
       message: 'Successfully booked scrim',
-      requiresPayment: scrim.entryFee > 0
+      requiresPayment: scrim.entryFee > 0,
     });
   } catch (error) {
     await session.abortTransaction();
     session.endSession();
-    
     console.error('Booking error:', error);
     res.status(400).json({ message: error.message });
   }
 };
 
+// ---------- Room Credentials ----------
 export const getRoomCredentials = async (req, res) => {
   try {
     const { id: scrimId } = req.params;
     const userId = req.user._id;
 
     const scrim = await Scrim.findById(scrimId);
-    if (!scrim) {
-      return res.status(404).json({ message: 'Scrim not found' });
-    }
+    if (!scrim) return res.status(404).json({ message: 'Scrim not found' });
 
-    // Check if user is authorized (owner or booked participant)
     const isOwner = scrim.createdBy.toString() === userId.toString();
     let isBooked = false;
 
@@ -313,31 +359,23 @@ export const getRoomCredentials = async (req, res) => {
         scrimId,
         playerId: userId,
         status: 'active',
-        paid: true
+        paid: true,
       });
-      
-      // Also check if user is in the room participants
+
       const room = await Room.findOne({ scrimId });
-      const isInRoom = room?.participants.some(p => 
-        p.userId.toString() === userId.toString() && p.status === 'active'
+      const isInRoom = room?.participants?.some(
+        (p) => p.userId.toString() === userId.toString() && p.status === 'active'
       );
-      
-      isBooked = !!booking || isInRoom;
+      isBooked = !!booking || !!isInRoom;
     }
 
-    if (!isOwner && !isBooked) {
+    if (!isOwner && !isBooked)
       return res.status(403).json({ message: 'Not authorized to view room credentials' });
-    }
 
-    // Get room data
     const room = await Room.findOne({ scrimId });
-    if (!room) {
-      return res.status(404).json({ message: 'Room not found' });
-    }
+    if (!room) return res.status(404).json({ message: 'Room not found' });
 
     let roomPassword = null;
-    
-    // Decrypt room password if it exists
     if (room.password) {
       try {
         const encryptedData = JSON.parse(room.password);
@@ -349,7 +387,7 @@ export const getRoomCredentials = async (req, res) => {
 
     res.json({
       roomId: room.roomId,
-      roomPassword
+      roomPassword,
     });
   } catch (error) {
     console.error('Get room credentials error:', error);
@@ -357,6 +395,7 @@ export const getRoomCredentials = async (req, res) => {
   }
 };
 
+// ---------- Update Scrim ----------
 export const updateScrim = async (req, res) => {
   try {
     const { id } = req.params;
@@ -364,41 +403,68 @@ export const updateScrim = async (req, res) => {
     const userId = req.user._id;
 
     const scrim = await Scrim.findById(id);
-    if (!scrim) {
-      return res.status(404).json({ message: 'Scrim not found' });
-    }
+    if (!scrim) return res.status(404).json({ message: 'Scrim not found' });
 
-    // Check if user is the owner
-    if (scrim.createdBy.toString() !== userId.toString()) {
+    if (scrim.createdBy.toString() !== userId.toString())
       return res.status(403).json({ message: 'Only scrim owner can update' });
+
+    // Normalize time updates
+    if (updates.timeSlot) {
+      const ts = updates.timeSlot;
+      if (ts.start) scrim.timeSlot.start = moment.tz(ts.start, TZ).toDate();
+      if (ts.end) scrim.timeSlot.end = moment.tz(ts.end, TZ).toDate();
     }
+    if (updates.date) scrim.date = moment.tz(updates.date, 'YYYY-MM-DD', TZ).toDate();
 
-    // Update scrim
-    Object.assign(scrim, updates);
-    await scrim.save();
+    const writable = [
+      'title',
+      'description',
+      'game',
+      'platform',
+      'capacity',
+      'entryFee',
+      'prizePool',
+      'status',
+    ];
+    writable.forEach((key) => {
+      if (updates[key] !== undefined) scrim[key] = updates[key];
+    });
 
-    // Update room if room credentials changed
+    // Room updates
     if (updates.room) {
-      const room = await Room.findOne({ scrimId: id });
-      if (room) {
-        if (updates.room.id) room.roomId = updates.room.id;
+      const roomDoc = await Room.findOne({ scrimId: id });
+      if (roomDoc) {
+        if (updates.room.id) roomDoc.roomId = updates.room.id;
         if (updates.room.password) {
           const encrypted = encrypt(updates.room.password);
-          room.password = encrypted ? JSON.stringify(encrypted) : null;
+          roomDoc.password = JSON.stringify(encrypted);
         }
-        await room.save();
-        
-        // Also update the scrim's room info for consistency
+        await roomDoc.save();
+
         scrim.room = {
           id: updates.room.id || scrim.room?.id,
-          password: room.password,
-          revealToParticipants: scrim.room?.revealToParticipants || false
+          password: roomDoc.password,
+          revealToParticipants: scrim.room?.revealToParticipants || false,
         };
-        await scrim.save();
+      } else {
+        const encrypted = updates.room.password
+          ? JSON.stringify(encrypt(updates.room.password))
+          : null;
+        await Room.create({
+          scrimId: scrim._id,
+          roomId: updates.room.id || `scrim-${scrim._id}`,
+          password: encrypted,
+          settings: { onlyOrgCanMessage: true, autoRevealCredentials: false },
+        });
+        scrim.room = {
+          id: updates.room.id || scrim.room?.id,
+          password: encrypted,
+          revealToParticipants: scrim.room?.revealToParticipants || false,
+        };
       }
     }
 
-    // Return updated scrim with populated data
+    await scrim.save();
     const updatedScrim = await Scrim.findById(id).populate('createdBy', 'name organizationInfo');
     res.json({ scrim: updatedScrim });
   } catch (error) {
@@ -407,35 +473,27 @@ export const updateScrim = async (req, res) => {
   }
 };
 
+// ---------- Remove Participant ----------
 export const removeParticipant = async (req, res) => {
   try {
     const { id: scrimId, playerId } = req.params;
     const userId = req.user._id;
 
     const scrim = await Scrim.findById(scrimId);
-    if (!scrim) {
-      return res.status(404).json({ message: 'Scrim not found' });
-    }
+    if (!scrim) return res.status(404).json({ message: 'Scrim not found' });
 
-    // Check if user is the owner
-    if (scrim.createdBy.toString() !== userId.toString()) {
+    if (scrim.createdBy.toString() !== userId.toString())
       return res.status(403).json({ message: 'Only scrim owner can remove participants' });
-    }
 
-    // Remove from scrim participants
-    scrim.participants = scrim.participants.filter(p => p.toString() !== playerId);
+    scrim.participants = scrim.participants.filter((p) => p.toString() !== playerId);
     await scrim.save();
 
-    // Delete booking completely so player can rebook
     await Booking.deleteOne({ scrimId, playerId });
-
-    // Delete payment record if exists
     await Payment.deleteOne({ scrimId, playerId });
 
-    // Remove from room
     const room = await Room.findOne({ scrimId });
     if (room) {
-      const participant = room.participants.find(p => p.userId.toString() === playerId);
+      const participant = room.participants.find((p) => p.userId.toString() === playerId);
       if (participant) {
         participant.status = 'removed';
         await room.save();
@@ -449,80 +507,84 @@ export const removeParticipant = async (req, res) => {
   }
 };
 
+// ---------- Send Room Message (supports image) ----------
 export const sendRoomMessage = async (req, res) => {
   try {
     const { id: scrimId } = req.params;
-    const { content, type = 'text' } = req.body;
+    const { content = '', type = 'text', imageUrl } = req.body;
     const userId = req.user._id;
 
     const scrim = await Scrim.findById(scrimId);
-    if (!scrim) {
-      return res.status(404).json({ message: 'Scrim not found' });
-    }
+    if (!scrim) return res.status(404).json({ message: 'Scrim not found' });
 
     const room = await Room.findOne({ scrimId });
-    if (!room) {
-      return res.status(404).json({ message: 'Room not found' });
-    }
+    if (!room) return res.status(404).json({ message: 'Room not found' });
 
-    // Check permissions - only org owner can send messages
+    // Only the org owner can send messages (adjust if players can chat too)
     const isOwner = scrim.createdBy.toString() === userId.toString();
-    if (!isOwner) {
-      return res.status(403).json({ message: 'Only organization owner can send messages' });
+    if (!isOwner) return res.status(403).json({ message: 'Only organization owner can send messages' });
+
+    const allowedTypes = ['text', 'image', 'credentials', 'system'];
+    if (!allowedTypes.includes(type)) {
+      return res.status(400).json({ message: 'Invalid message type' });
+    }
+    if (type === 'image' && !imageUrl) {
+      return res.status(400).json({ message: 'imageUrl is required for type=image' });
     }
 
-    // Add message
-    room.messages.push({
+    const message = {
       senderId: userId,
       content,
-      type
-    });
+      type,
+      timestamp: new Date(),
+    };
+    if (type === 'image') message.imageUrl = imageUrl;
+
+    room.messages.push(message);
     await room.save();
 
-    res.json({ message: 'Message sent successfully' });
+    // Optionally populate sender for immediate echo
+    await room.populate('messages.senderId', 'name role');
+
+    return res.json({ message: room.messages[room.messages.length - 1] });
   } catch (error) {
     console.error('Send message error:', error);
     res.status(500).json({ message: 'Server error sending message' });
   }
 };
 
+
+// ---------- Get Room Messages ----------
 export const getRoomMessages = async (req, res) => {
   try {
     const { id: scrimId } = req.params;
     const userId = req.user._id;
 
     const scrim = await Scrim.findById(scrimId);
-    if (!scrim) {
-      return res.status(404).json({ message: 'Scrim not found' });
-    }
+    if (!scrim) return res.status(404).json({ message: 'Scrim not found' });
 
     const room = await Room.findOne({ scrimId })
       .populate('messages.senderId', 'name role')
       .populate('participants.userId', 'name');
 
-    if (!room) {
-      return res.status(404).json({ message: 'Room not found' });
-    }
+    if (!room) return res.status(404).json({ message: 'Room not found' });
 
-    // Check permissions
     const isOwner = scrim.createdBy.toString() === userId.toString();
-    
-    // Check if user is in room participants
-    const isInRoom = room.participants.some(p => 
-      p.userId._id.toString() === userId.toString() && p.status === 'active'
+    const isInRoom = room.participants.some(
+      (p) => p.userId?._id?.toString() === userId.toString() && p.status === 'active'
     );
-
     if (!isOwner && !isInRoom) {
       return res.status(403).json({ message: 'Not authorized to view room' });
     }
 
-    res.json({ room });
+    return res.json({ room });
   } catch (error) {
     console.error('Get room messages error:', error);
     res.status(500).json({ message: 'Server error fetching room messages' });
   }
 };
 
+// ---------- Payment ----------
 export const processPayment = async (req, res) => {
   try {
     const { id: scrimId } = req.params;
@@ -530,24 +592,17 @@ export const processPayment = async (req, res) => {
     const playerId = req.user._id;
 
     const payment = await Payment.findOne({ scrimId, playerId, status: 'pending' });
-    if (!payment) {
-      return res.status(404).json({ message: 'Payment not found' });
-    }
+    if (!payment) return res.status(404).json({ message: 'Payment not found' });
 
-    // Simulate successful payment
     payment.status = 'completed';
     payment.paymentMethod = paymentMethod;
     payment.transactionId = transactionId;
     payment.paidAt = new Date();
     await payment.save();
 
-    // Add player to room after successful payment
     const room = await Room.findOne({ scrimId });
     if (room) {
-      const existingParticipant = room.participants.find(p => 
-        p.userId.toString() === playerId.toString()
-      );
-      
+      const existingParticipant = room.participants.find((p) => p.userId.toString() === playerId.toString());
       if (!existingParticipant) {
         room.participants.push({ userId: playerId });
         await room.save();
@@ -557,11 +612,7 @@ export const processPayment = async (req, res) => {
       }
     }
 
-    // Update booking as paid
-    await Booking.findOneAndUpdate(
-      { scrimId, playerId },
-      { paid: true }
-    );
+    await Booking.findOneAndUpdate({ scrimId, playerId }, { paid: true });
 
     res.json({ message: 'Payment processed successfully' });
   } catch (error) {
@@ -570,6 +621,7 @@ export const processPayment = async (req, res) => {
   }
 };
 
+// ---------- Rating ----------
 export const rateScrim = async (req, res) => {
   try {
     const { id: scrimId } = req.params;
@@ -577,22 +629,14 @@ export const rateScrim = async (req, res) => {
     const playerId = req.user._id;
 
     const scrim = await Scrim.findById(scrimId);
-    if (!scrim) {
-      return res.status(404).json({ message: 'Scrim not found' });
-    }
+    if (!scrim) return res.status(404).json({ message: 'Scrim not found' });
 
-    if (scrim.status !== 'completed') {
-      return res.status(400).json({ message: 'Can only rate completed scrims' });
-    }
+    if (scrim.status !== 'completed') return res.status(400).json({ message: 'Can only rate completed scrims' });
 
-    // Check if player participated
     const booking = await Booking.findOne({ scrimId, playerId, status: 'active' });
-    if (!booking) {
-      return res.status(403).json({ message: 'Only participants can rate scrims' });
-    }
+    if (!booking) return res.status(403).json({ message: 'Only participants can rate scrims' });
 
-    // Check if already rated
-    const existingRating = scrim.ratings.find(r => r.playerId.toString() === playerId.toString());
+    const existingRating = scrim.ratings.find((r) => r.playerId.toString() === playerId.toString());
     if (existingRating) {
       existingRating.rating = rating;
       existingRating.comment = comment;
@@ -601,7 +645,6 @@ export const rateScrim = async (req, res) => {
       scrim.ratings.push({ playerId, rating, comment });
     }
 
-    // Calculate average rating
     const totalRating = scrim.ratings.reduce((sum, r) => sum + r.rating, 0);
     scrim.averageRating = totalRating / scrim.ratings.length;
 
@@ -613,23 +656,19 @@ export const rateScrim = async (req, res) => {
   }
 };
 
+// ---------- Participants for Org ----------
 export const getParticipantDetails = async (req, res) => {
   try {
     const { id: scrimId } = req.params;
     const userId = req.user._id;
 
     const scrim = await Scrim.findById(scrimId);
-    if (!scrim) {
-      return res.status(404).json({ message: 'Scrim not found' });
-    }
+    if (!scrim) return res.status(404).json({ message: 'Scrim not found' });
 
-    // Only org owner can view participant details
-    if (scrim.createdBy.toString() !== userId.toString()) {
+    if (scrim.createdBy.toString() !== userId.toString())
       return res.status(403).json({ message: 'Only scrim owner can view participant details' });
-    }
 
-    const bookings = await Booking.find({ scrimId, status: 'active' })
-      .populate('playerId', 'name email');
+    const bookings = await Booking.find({ scrimId, status: 'active' }).populate('playerId', 'name email');
 
     res.json({ participants: bookings });
   } catch (error) {

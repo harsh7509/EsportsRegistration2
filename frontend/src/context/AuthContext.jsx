@@ -8,28 +8,28 @@ const authReducer = (state, action) => {
     case 'LOGIN_START':
       return { ...state, loading: true, error: null };
     case 'LOGIN_SUCCESS':
-      return { 
-        ...state, 
-        loading: false, 
-        user: action.payload.user, 
+      return {
+        ...state,
+        loading: false,
+        user: action.payload.user,
         isAuthenticated: true,
-        error: null 
+        error: null
       };
     case 'LOGIN_FAILURE':
-      return { 
-        ...state, 
-        loading: false, 
-        error: action.payload, 
+      return {
+        ...state,
+        loading: false,
+        error: action.payload,
         isAuthenticated: false,
-        user: null 
+        user: null
       };
     case 'LOGOUT':
-      return { 
-        ...state, 
-        user: null, 
-        isAuthenticated: false, 
+      return {
+        ...state,
+        user: null,
+        isAuthenticated: false,
         loading: false,
-        error: null 
+        error: null
       };
     case 'SET_LOADING':
       return { ...state, loading: action.payload };
@@ -45,39 +45,108 @@ const initialState = {
   error: null,
 };
 
+// Helper: call /auth/me using whatever shape authAPI exposes
+async function fetchMeSafe(token) {
+  try {
+    if (authAPI?.me) {
+      const r = await authAPI.me();
+      return r?.data?.user ?? r?.data ?? null;
+    }
+    if (authAPI?.get) {
+      const r = await authAPI.get('/auth/me', {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      return r?.data?.user ?? r?.data ?? null;
+    }
+    // Fallback to fetch if needed
+    const API = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
+    const r = await fetch(`${API}/auth/me`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      credentials: 'include',
+    });
+    if (!r.ok) return null;
+    const data = await r.json();
+    return data?.user ?? data ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export const AuthProvider = ({ children }) => {
   const [state, dispatch] = useReducer(authReducer, initialState);
 
-  // Check for existing token on mount
+  // On mount: restore session from token + (user OR /auth/me)
   useEffect(() => {
-    const token = getToken();
-    if (token) {
-      // Token exists, assume user is authenticated
-      // In a real app, you might want to validate the token with the server
-      dispatch({ 
-        type: 'LOGIN_SUCCESS', 
-        payload: { 
-          user: JSON.parse(localStorage.getItem('user') || '{}') 
-        } 
-      });
-    } else {
-      dispatch({ type: 'SET_LOADING', payload: false });
-    }
+    (async () => {
+      try {
+        const token = getToken(); // from your services/api storage
+        const storedUser = localStorage.getItem('user');
+
+        if (token && storedUser) {
+          // Fast path: we already have a user cached
+          const user = JSON.parse(storedUser);
+          console.log('🔑 Restoring user session:', user.email);
+          dispatch({ type: 'LOGIN_SUCCESS', payload: { user } });
+        } else if (token && !storedUser) {
+          // Token present but user missing → fetch /auth/me
+          const meUser = await fetchMeSafe(token);
+          if (meUser) {
+            localStorage.setItem('user', JSON.stringify(meUser));
+            dispatch({ type: 'LOGIN_SUCCESS', payload: { user: meUser } });
+          } else {
+            dispatch({ type: 'SET_LOADING', payload: false });
+          }
+        } else {
+          dispatch({ type: 'SET_LOADING', payload: false });
+        }
+      } catch (error) {
+        console.error('❌ Error restoring session:', error);
+        clearTokens();
+        localStorage.removeItem('user');
+        dispatch({ type: 'SET_LOADING', payload: false });
+      }
+    })();
   }, []);
 
   const login = async (credentials) => {
     dispatch({ type: 'LOGIN_START' });
     try {
-      const response = await authAPI.login(credentials);
-      const { user, accessToken, refreshToken } = response.data;
-      
-      setTokens(accessToken, refreshToken);
-      localStorage.setItem('user', JSON.stringify(user));
-      
+      console.log('🔐 Attempting login with:', credentials.email);
+
+      const resp = await authAPI.login(credentials);
+      const data = resp?.data ?? resp ?? {};
+
+      // Accept any token field name from backend
+      const accessToken =
+        data.accessToken || data.access_token || data.token || null;
+      const refreshToken =
+        data.refreshToken || data.refresh_token || null;
+
+      // Prefer user from response; if absent, fetch /auth/me
+      let user = data.user ?? null;
+      if (!user && accessToken) {
+        user = await fetchMeSafe(accessToken);
+      }
+
+      if (!accessToken || !user) {
+        const msg = !accessToken
+          ? 'No access token returned'
+          : 'Login succeeded but user info missing';
+        console.warn('[Auth] ' + msg);
+      }
+
+      // Persist what we have
+      setTokens(accessToken || '', refreshToken || '');
+      if (user) localStorage.setItem('user', JSON.stringify(user));
+
       dispatch({ type: 'LOGIN_SUCCESS', payload: { user } });
       return { success: true };
     } catch (error) {
-      const message = error.response?.data?.message || 'Login failed';
+      console.error('❌ Login failed:', error);
+      const message =
+        error?.response?.data?.message ||
+        error?.message ||
+        'Login failed';
       dispatch({ type: 'LOGIN_FAILURE', payload: message });
       return { success: false, error: message };
     }
@@ -86,25 +155,62 @@ export const AuthProvider = ({ children }) => {
   const register = async (userData) => {
     dispatch({ type: 'LOGIN_START' });
     try {
-      const response = await authAPI.register(userData);
-      const { user, accessToken, refreshToken } = response.data;
-      
-      setTokens(accessToken, refreshToken);
-      localStorage.setItem('user', JSON.stringify(user));
-      
+      console.log('📝 Attempting registration with:', userData.email);
+
+      const resp = await authAPI.register(userData);
+      const data = resp?.data ?? resp ?? {};
+
+      const accessToken =
+        data.accessToken || data.access_token || data.token || null;
+      const refreshToken =
+        data.refreshToken || data.refresh_token || null;
+
+      let user = data.user ?? null;
+      if (!user && accessToken) {
+        user = await fetchMeSafe(accessToken);
+      }
+
+      setTokens(accessToken || '', refreshToken || '');
+      if (user) localStorage.setItem('user', JSON.stringify(user));
+
       dispatch({ type: 'LOGIN_SUCCESS', payload: { user } });
       return { success: true };
     } catch (error) {
-      const message = error.response?.data?.message || 'Registration failed';
+      console.error('❌ Registration failed:', error);
+      const message =
+        error?.response?.data?.message ||
+        error?.message ||
+        'Registration failed';
       dispatch({ type: 'LOGIN_FAILURE', payload: message });
       return { success: false, error: message };
     }
   };
 
   const logout = () => {
+    console.log('🚪 Logging out user');
     clearTokens();
     localStorage.removeItem('user');
     dispatch({ type: 'LOGOUT' });
+  };
+
+  const updateProfile = async (profileData) => {
+    try {
+      console.log('📝 Updating profile:', profileData);
+      const response = await authAPI.updateProfile(profileData);
+      const updatedUser = response?.data?.user ?? response?.data ?? null;
+
+      if (updatedUser) {
+        localStorage.setItem('user', JSON.stringify(updatedUser));
+        dispatch({ type: 'LOGIN_SUCCESS', payload: { user: updatedUser } });
+      }
+      return { success: true };
+    } catch (error) {
+      console.error('❌ Profile update error:', error);
+      return {
+        success: false,
+        error: error?.response?.data?.message || error?.message || 'Update failed'
+      };
+    }
   };
 
   const value = {
@@ -112,19 +218,14 @@ export const AuthProvider = ({ children }) => {
     login,
     register,
     logout,
+    updateProfile,
   };
 
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
+  if (!context) throw new Error('useAuth must be used within an AuthProvider');
   return context;
 };
