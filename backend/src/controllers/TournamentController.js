@@ -16,17 +16,12 @@ const normalizeId = (value) => {
   return String(value);
 };
 const idsMatch = (a, b) => normalizeId(a) === normalizeId(b);
-const toObjectId = (value) => {
-  if (!value) return null;
-  return value instanceof mongoose.Types.ObjectId
-    ? value
-    : new mongoose.Types.ObjectId(String(value));
-};
+const toObjectId = (value) => (value instanceof mongoose.Types.ObjectId ? value : new mongoose.Types.ObjectId(String(value)));
+
 /* =========================
    CRUD
 ========================= */
 
-// POST /api/tournaments  (org only)
 export const createTournament = async (req, res) => {
   try {
     const {
@@ -42,10 +37,8 @@ export const createTournament = async (req, res) => {
       prizes,
     } = req.body;
 
-    const organizationId = req.user?._id; // org user creating it
-    if (!organizationId) {
-      return res.status(401).json({ message: 'Unauthorized' });
-    }
+    const organizationId = req.user?._id;
+    if (!organizationId) return res.status(401).json({ message: 'Unauthorized' });
 
     const t = await Tournament.create({
       title,
@@ -69,8 +62,6 @@ export const createTournament = async (req, res) => {
   }
 };
 
-
-// GET /api/tournaments  (public)  → returns {items: [...]}
 export const listTournaments = async (req, res) => {
   try {
     const { page = 1, limit = 20, organizationId, active = 'true', participantId } = req.query;
@@ -103,20 +94,16 @@ export const listTournaments = async (req, res) => {
   }
 };
 
-// GET /api/tournaments/:id  (public) → returns {tournament: {...}}
 export const getTournament = async (req, res) => {
   try {
     const { id } = req.params;
-    if (!isId(id)) {
-      return res.status(404).json({ message: 'Tournament not found' });
-    }
+    if (!isId(id)) return res.status(404).json({ message: 'Tournament not found' });
 
     const t = await Tournament.findById(id)
       .populate('organizationId', 'name organizationInfo avatarUrl')
-      .populate('participants.userId', 'name avatarUrl')
+      .populate('participants.userId', 'name avatarUrl');
 
     if (!t) return res.status(404).json({ message: 'Tournament not found' });
-
     res.json({ tournament: t });
   } catch (e) {
     console.error('Get tournament failed:', e);
@@ -124,7 +111,6 @@ export const getTournament = async (req, res) => {
   }
 };
 
-// PUT /api/tournaments/:id  (org owner or admin) → {tournament}
 export const updateTournament = async (req, res) => {
   try {
     const { id } = req.params;
@@ -151,9 +137,12 @@ export const updateTournament = async (req, res) => {
 };
 
 /* =========================
-   Registration
+   Registration (Team)
 ========================= */
 
+// inside backend/src/controllers/TournamentController.js
+
+// POST /api/tournaments/:id/register  (player)
 // POST /api/tournaments/:id/register  (player)
 export const registerTournament = async (req, res) => {
   try {
@@ -163,19 +152,49 @@ export const registerTournament = async (req, res) => {
     if (!isId(id)) return res.status(400).json({ message: 'Invalid tournament id' });
     if (!me?._id)  return res.status(401).json({ message: 'Not authenticated' });
 
+    // Team/contact payload (phone is the uniqueness “confirmation” field)
+    const {
+      teamName = '',
+      phone = '',
+      realName = '',
+      players = [],    // array of { ignName, ignId } — first 4 required, 5th optional
+      ign = '',        // optional legacy field, kept for compatibility
+    } = req.body || {};
+
+    const cleanPhone = String(phone || '').replace(/\D/g, '');
+    if (!teamName.trim()) return res.status(400).json({ message: 'Team name is required' });
+    if (!cleanPhone)      return res.status(400).json({ message: 'Phone number is required' });
+    if (!realName.trim()) return res.status(400).json({ message: 'Real name is required' });
+
+    // players[0..3] must be provided with ignName & ignId; players[4] optional
+    const pArr = Array.isArray(players) ? players.filter(Boolean) : [];
+    if (pArr.length < 4 || pArr.length > 5) {
+      return res.status(400).json({ message: 'Provide 4–5 players' });
+    }
+    const firstFourOk = pArr.slice(0, 4).every(
+      (p) => p && String(p.ignName || '').trim() && String(p.ignId || '').trim()
+    );
+    if (!firstFourOk) {
+      return res.status(400).json({ message: 'First four players must include IGN name & ID' });
+    }
+
+    // Load tournament minimally for checks
     const t = await Tournament.findById(id)
       .select('capacity registeredCount participants organizationId')
       .lean();
     if (!t) return res.status(404).json({ message: 'Tournament not found' });
 
-    // already registered?
-    const already = Array.isArray(t.participants) &&
-      t.participants.some(p => String(p.userId) === String(me._id));
-    if (already) {
+    // Uniqueness: user, phone, or team name already registered in this same tournament
+    const alreadyByUser  = (t.participants || []).some(p => String(p.userId) === String(me._id));
+    const alreadyByPhone = (t.participants || []).some(p => (p.phone || '').replace(/\D/g, '') === cleanPhone);
+    const alreadyByTeam  = (t.participants || []).some(p => (p.teamName || '').toLowerCase() === teamName.trim().toLowerCase());
+
+    if (alreadyByUser || alreadyByPhone || alreadyByTeam) {
+      // Return the fresh tourney so the UI can continue
       const fresh = await Tournament.findById(id)
         .populate('organizationId', 'name avatarUrl organizationInfo')
         .lean();
-      return res.json({ tournament: fresh });
+      return res.status(409).json({ message: 'Already registered for this tournament (phone/team/user)', tournament: fresh });
     }
 
     // capacity check
@@ -184,11 +203,21 @@ export const registerTournament = async (req, res) => {
       return res.status(400).json({ message: 'Capacity full' });
     }
 
-    // add participant; don't re-validate whole doc (older docs may have startAt missing)
+    // Add participant. We keep runValidators false so older docs with legacy fields won’t break.
+    const participant = {
+      userId: me._id,
+      ign: String(ign || me.name || ''), // legacy/compat
+      teamName: teamName.trim(),
+      phone: cleanPhone,
+      realName: realName.trim(),
+      players: pArr.map(p => ({ ignName: String(p.ignName || ''), ignId: String(p.ignId || '') })),
+      registeredAt: new Date(),
+    };
+
     const updated = await Tournament.findOneAndUpdate(
       { _id: id },
       {
-        $addToSet: { participants: { userId: me._id, ign: me.name || '' } },
+        $push: { participants: participant },
         $inc: { registeredCount: 1 }
       },
       { new: true, runValidators: false }
@@ -203,35 +232,141 @@ export const registerTournament = async (req, res) => {
   }
 };
 
-// GET /api/tournaments/:id/participants (org/admin)
+export const getMyGroupTeams = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const me = req.user?._id;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid tournament id' });
+    }
+    if (!me) return res.status(401).json({ message: 'Auth required' });
+
+    // load groups + participants once
+    const t = await Tournament.findById(id).select('groups participants').lean();
+    if (!t) return res.status(404).json({ message: 'Tournament not found' });
+
+    // find my group
+    const group = (t.groups || []).find(g =>
+      Array.isArray(g.memberIds) && g.memberIds.some(u => String(u) === String(me))
+    );
+    if (!group) return res.status(404).json({ message: 'You are not in any group yet' });
+
+    // map participant by userId
+    const pMap = new Map(
+      (t.participants || []).map(p => [String(p.userId), p])
+    );
+
+    // Only expose teamName (fall back to ign or 'Team')
+    const teams = (group.memberIds || []).map(uid => {
+      const key = String(uid);
+      const p = pMap.get(key);
+      const teamName = (p?.teamName && String(p.teamName).trim())
+        || (p?.ign && String(p.ign).trim())
+        || 'Team';
+      return { userId: key, teamName };
+    });
+
+    // Optional: dedupe + sort by team name
+    const seen = new Set();
+    const unique = teams.filter(ti => (seen.has(ti.userId) ? false : (seen.add(ti.userId), true)));
+    unique.sort((a, b) => a.teamName.localeCompare(b.teamName));
+
+    return res.json({ teams: unique });
+  } catch (e) {
+    console.error('getMyGroupTeams error:', e);
+    return res.status(500).json({ message: 'Failed to fetch group teams' });
+  }
+};
+
+
+// DELETE /api/tournaments/:id/participants/:userId  (org owner/admin)
+export const removeTournamentParticipant = async (req, res) => {
+  try {
+    const { id, userId } = req.params;
+    if (!isId(id) || !isId(userId)) {
+      return res.status(400).json({ message: 'Invalid id(s)' });
+    }
+
+    const t = await Tournament.findById(id).select('organizationId createdBy participants groups').lean();
+    if (!t) return res.status(404).json({ message: 'Tournament not found' });
+
+    const me = String(req.user?._id || '');
+    const owner = ownerIdOf(t);
+    if (me !== owner && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Not allowed' });
+    }
+
+    // 1) Remove from participants (and decrement registeredCount only if something was removed)
+    const beforeCount = (t.participants || []).length;
+    await Tournament.updateOne(
+      { _id: id },
+      { $pull: { participants: { userId: new mongoose.Types.ObjectId(userId) } } },
+      { runValidators: false }
+    );
+
+    const after = await Tournament.findById(id).select('participants registeredCount groups').lean();
+    const removed = beforeCount > (after.participants || []).length;
+    if (removed) {
+      await Tournament.updateOne(
+        { _id: id, registeredCount: { $gt: 0 } },
+        { $inc: { registeredCount: -1 } },
+        { runValidators: false }
+      );
+    }
+
+    // 2) Remove from ALL groups in this tournament
+    await Tournament.updateOne(
+      { _id: id },
+      { $pull: { 'groups.$[].memberIds': new mongoose.Types.ObjectId(userId) } },
+      { runValidators: false }
+    );
+
+    // 3) Remove from any existing group room participants
+    await Room.updateMany(
+      { tournamentId: id },
+      { $pull: { participants: { userId: new mongoose.Types.ObjectId(userId) } } }
+    );
+
+    const fresh = await Tournament.findById(id)
+      .populate('participants.userId', 'name avatarUrl role')
+      .lean();
+
+    return res.json({ participants: fresh?.participants || [] });
+  } catch (e) {
+    console.error('removeTournamentParticipant error:', e);
+    return res.status(500).json({ message: 'Failed to remove participant' });
+  }
+};
+
+
+
+
+/* =========================
+   Participants
+========================= */
+
 export const getParticipants = async (req, res) => {
   try {
     const { id } = req.params;
     if (!isId(id)) return res.status(400).json({ message: 'Invalid tournament id' });
 
-    // load participants with user populated
     const t = await Tournament.findById(id)
-     .populate('participants.userId', 'name avatarUrl role');
+      .populate('participants.userId', 'name avatarUrl role');
     if (!t) return res.status(404).json({ message: 'Tournament not found' });
 
-    // // Use the robust owner helper so this works whether organizationId is an ObjectId or populated doc
-    // const ownerIdOf = (t) => String(t?.organizationId?._id || t?.organizationId || t?.createdBy || '');
-
     const me = String(req.user?._id || '');
-    const owner = ownerIdOf(t);  // ✅ FIX: owner को define करो
-    if (me !== String(owner) && req.user.role !== 'admin')  {
+    const owner = ownerIdOf(t);
+    if (me !== owner && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Not allowed' });
     }
 
-   return res.json({ participants: Array.isArray(t.participants) ? t.participants : [] });
+    return res.json({ participants: Array.isArray(t.participants) ? t.participants : [] });
   } catch (e) {
     console.error('getParticipants error:', e);
     return res.status(500).json({ message: 'Failed to fetch participants' });
   }
 };
 
-
-// DELETE /api/tournaments/:id
 export const deleteTournament = async (req, res) => {
   try {
     const { id } = req.params;
@@ -246,10 +381,7 @@ export const deleteTournament = async (req, res) => {
       return res.status(403).json({ message: 'Not allowed' });
     }
 
-    // clean up rooms linked to this tournament
     await Room.deleteMany({ tournamentId: id });
-    // (यदि bookings/payments वगैरह link हों तो यहाँ handle करना)
-
     await Tournament.deleteOne({ _id: id });
     return res.json({ ok: true });
   } catch (e) {
@@ -262,7 +394,6 @@ export const deleteTournament = async (req, res) => {
    Groups
 ========================= */
 
-// Manually create a room for an existing group
 export const createGroupRoom = async (req, res) => {
   try {
     const { id, groupId } = req.params;
@@ -276,16 +407,14 @@ export const createGroupRoom = async (req, res) => {
       return res.status(403).json({ message: 'Not allowed' });
     }
 
-    const g = (t.groups || []).find(g => String(g._id) === String(groupId));
+    const g = (t.groups || []).find(x => String(x._id) === String(groupId));
     if (!g) return res.status(404).json({ message: 'Group not found' });
 
-    if (g.roomId) {
-      return res.json({ roomId: g.roomId });
-    }
+    if (g.roomId) return res.json({ roomId: g.roomId });
 
     const room = await Room.create({
       tournamentId: new mongoose.Types.ObjectId(id),
-      groupId: group._id,
+      groupId: g._id,
       groupName: g.name,
       participants: (g.memberIds || []).map(u => ({ userId: u })),
       messages: [{
@@ -310,7 +439,6 @@ export const createGroupRoom = async (req, res) => {
   }
 };
 
-// POST /api/tournaments/:id/groups/auto?size=4 (org/admin)
 export const autoGroup = async (req, res) => {
   try {
     const { id } = req.params;
@@ -343,22 +471,23 @@ export const autoGroup = async (req, res) => {
       const memberIds = ids.slice(i, i + size).map(x => new mongoose.Types.ObjectId(x));
       groups.push({
         _id: new mongoose.Types.ObjectId(),
-        groupId: group._id,
         name: `Group ${n}`,
         memberIds,
         roomId: null,
       });
     }
 
-    await Tournament.updateOne
-    ({ _id: id }, { $set: { groups } }, 
-      { runValidators: false });
+    await Tournament.updateOne(
+      { _id: id },
+      { $set: { groups } },
+      { runValidators: false }
+    );
 
-    // create room for each group
+    // create a room for each group
     for (const g of groups) {
       const room = await Room.create({
         tournamentId: new mongoose.Types.ObjectId(id),
-        groupId: group._id,
+        groupId: g._id,
         groupName: g.name,
         participants: (g.memberIds || []).map(u => ({ userId: u })),
         messages: [{
@@ -385,18 +514,15 @@ export const autoGroup = async (req, res) => {
   }
 };
 
-
-// PATCH /api/tournaments/:id/groups/:groupId/room/messages/:messageId
 export const editGroupRoomMessage = async (req, res) => {
   try {
     const { id, groupId, messageId } = req.params;
-    const { content } = req.body; // केवल text edit; image edit भी चाहें तो allow कर सकते हैं
+    const { content } = req.body;
     if (!isId(id) || !isId(groupId) || !isId(messageId)) {
       return res.status(400).json({ message: 'Bad request' });
     }
 
     const me = req.user;
-
     const t = await Tournament.findById(id);
     if (!t) return res.status(404).json({ message: 'Tournament not found' });
 
@@ -404,17 +530,16 @@ export const editGroupRoomMessage = async (req, res) => {
     if (!group) return res.status(404).json({ message: 'Group not found' });
 
     const room = await ensureGroupRoom(id, group);
-    const msg = (room.messages || []).find((m) => String(m._id, messageId));
+    const msg = (room.messages || []).find((m) => String(m._id) === String(messageId));
     if (!msg) return res.status(404).json({ message: 'Message not found' });
 
-    const isSender = String(msg.senderId, me._id);
+    const isSender = String(msg.senderId) === String(me._id);
     if (!isSender && !canModerate(t, me)) {
       return res.status(403).json({ message: 'Not allowed' });
     }
 
     await Room.updateOne(
       { _id: room._id, 'messages._id': toObjectId(messageId) },
-
       {
         $set: {
           'messages.$.content': String(content ?? ''),
@@ -431,45 +556,33 @@ export const editGroupRoomMessage = async (req, res) => {
   }
 };
 
-// DELETE /api/tournaments/:id/groups/:groupId/room/messages/:messageId
 export const deleteGroupRoomMessage = async (req, res) => {
   try {
     const { id, groupId, messageId } = req.params;
-   if (!isId(id) || !isId(groupId) || !isId(messageId)) {
-     return res.status(400).json({ message: 'Bad request' });
-   }
+    if (!isId(id) || !isId(groupId) || !isId(messageId)) {
+      return res.status(400).json({ message: 'Bad request' });
+    }
 
-   const me = req.user;
-   const t = await Tournament.findById(id);
-   if (!t) return res.status(404).json({ message: 'Tournament not found' });
+    const me = req.user;
+    const t = await Tournament.findById(id);
+    if (!t) return res.status(404).json({ message: 'Tournament not found' });
 
-   const group = t.groups.id(groupId);
-   if (!group) return res.status(404).json({ message: 'Group not found' });
+    const group = t.groups.id(groupId);
+    if (!group) return res.status(404).json({ message: 'Group not found' });
 
-   const room = await ensureGroupRoom(id, group);
-   const msg = (room.messages || []).find((m) => String(m._id) === String(messageId));
-   if (!msg) return res.status(404).json({ message: 'Message not found' });
+    const room = await ensureGroupRoom(id, group);
+    const msg = (room.messages || []).find((m) => String(m._id) === String(messageId));
+    if (!msg) return res.status(404).json({ message: 'Message not found' });
 
-   const isSender = String(msg.senderId) === String(me._id);
-   if (!isSender && !canModerate(t, me)) {
-     return res.status(403).json({ message: 'Not allowed' });
-   }
+    const isSender = String(msg.senderId) === String(me._id);
+    if (!isSender && !canModerate(t, me)) {
+      return res.status(403).json({ message: 'Not allowed' });
+    }
 
-   await Room.updateOne(
-     { _id: room._id, 'messages._id': toObjectId(messageId) },
-     {
-       $set: {
-         'messages.$.type': 'deleted',
-         'messages.$.content': '',
-         'messages.$.imageUrl': null,
-         'messages.$.deletedAt': new Date(),
-       },
-     }
-   );
-   const full = await Room.findById(room._id).lean();
-   return res.json({ room: { _id: room._id, messages: full?.messages || [] } });
-
-    // req.app.get('io')?.to(room._id.toString()).emit('room:message:deleted', { roomId: room._id, messageId });
+    await Room.updateOne(
+      { _id: room._id },
+      { $pull: { messages: { _id: toObjectId(messageId) } } }
+    );
 
     return res.json({ ok: true });
   } catch (e) {
@@ -478,13 +591,10 @@ export const deleteGroupRoomMessage = async (req, res) => {
   }
 };
 
-
 export const deleteGroup = async (req, res) => {
   try {
     const { id, groupId } = req.params;
-    if (!isId(id) || !isId(groupId)) {
-      return res.status(400).json({ message: 'Bad request' });
-    }
+    if (!isId(id) || !isId(groupId)) return res.status(400).json({ message: 'Bad request' });
 
     const t = await Tournament.findById(id).select('organizationId createdBy groups').lean();
     if (!t) return res.status(404).json({ message: 'Tournament not found' });
@@ -496,14 +606,9 @@ export const deleteGroup = async (req, res) => {
     const g = (t.groups || []).find(x => String(x._id) === String(groupId));
     if (!g) return res.status(404).json({ message: 'Group not found' });
 
-    // 1) delete linked room (if any)
-    if (g.roomId) {
-      await Room.deleteOne({ _id: g.roomId });
-    } else {
-      await Room.deleteOne({ tournamentId: id, groupId }); // in case it exists without being linked
-    }
+    if (g.roomId) await Room.deleteOne({ _id: g.roomId });
+    else await Room.deleteOne({ tournamentId: id, groupId });
 
-    // 2) remove the group from the tournament
     await Tournament.updateOne(
       { _id: id },
       { $pull: { groups: { _id: groupId } } },
@@ -516,8 +621,6 @@ export const deleteGroup = async (req, res) => {
     return res.status(500).json({ message: 'Failed to delete group' });
   }
 };
-
-
 
 export const renameGroup = async (req, res) => {
   try {
@@ -550,7 +653,6 @@ export const renameGroup = async (req, res) => {
   }
 };
 
-// POST /api/tournaments/:id/groups/:groupId/remove-member  body: { userId }
 export const removeGroupMember = async (req, res) => {
   try {
     const { id, groupId } = req.params;
@@ -568,16 +670,14 @@ export const removeGroupMember = async (req, res) => {
       return res.status(403).json({ message: 'Not allowed' });
     }
 
-    // pull from group
     await Tournament.updateOne(
       { _id: id, 'groups._id': groupId },
       { $pull: { 'groups.$.memberIds': new mongoose.Types.ObjectId(userId) } },
       { runValidators: false }
     );
 
-    // also remove from room participants (if room exists)
     const cur = await Tournament.findById(id).select('groups').lean();
-    const g = cur?.groups?.find(g => String(g._id) === String(groupId));
+    const g = cur?.groups?.find(x => String(x._id) === String(groupId));
     if (g?.roomId) {
       await Room.updateOne(
         { _id: g.roomId },
@@ -593,7 +693,6 @@ export const removeGroupMember = async (req, res) => {
   }
 };
 
-// POST /api/tournaments/:id/groups/move-member  body: { userId, fromGroupId, toGroupId }
 export const moveGroupMember = async (req, res) => {
   try {
     const { id } = req.params;
@@ -611,31 +710,25 @@ export const moveGroupMember = async (req, res) => {
       return res.status(403).json({ message: 'Not allowed' });
     }
 
-    // 1) pull from old
     await Tournament.updateOne(
       { _id: id, 'groups._id': fromGroupId },
       { $pull: { 'groups.$.memberIds': new mongoose.Types.ObjectId(userId) } },
       { runValidators: false }
     );
 
-    // 2) push to new
     await Tournament.updateOne(
       { _id: id, 'groups._id': toGroupId },
       { $addToSet: { 'groups.$.memberIds': new mongoose.Types.ObjectId(userId) } },
       { runValidators: false }
     );
 
-    // rooms sync
     const fresh = await Tournament.findById(id).select('groups').lean();
-
     const fromG = fresh.groups.find(g => String(g._id) === String(fromGroupId));
     const toG   = fresh.groups.find(g => String(g._id) === String(toGroupId));
 
-    // ensure both rooms exist
     const fromRoom = fromG ? await ensureGroupRoom(t._id, fromG) : null;
     const toRoom   = toG   ? await ensureGroupRoom(t._id, toG)   : null;
 
-    // room participants update
     if (fromRoom) {
       await Room.updateOne(
         { _id: fromRoom._id },
@@ -644,8 +737,8 @@ export const moveGroupMember = async (req, res) => {
     }
     if (toRoom) {
       await Room.updateOne(
-        { _id: toRoom._id, 'participants.userId': { $ne: userId } },
-        { $push: { participants: { userId } } }
+        { _id: toRoom._id, 'participants.userId': { $ne: toObjectId(userId) } },
+        { $push: { participants: { userId: toObjectId(userId) } } }
       );
     }
 
@@ -660,16 +753,12 @@ export const moveGroupMember = async (req, res) => {
   }
 };
 
-
-// POST /api/tournaments/:id/groups/:groupId/members  body: { userId }
 export const addGroupMember = async (req, res) => {
   try {
     const { id, groupId } = req.params;
     const { userId } = req.body;
 
-    if (!mongoose.Types.ObjectId.isValid(id) ||
-        !mongoose.Types.ObjectId.isValid(groupId) ||
-        !mongoose.Types.ObjectId.isValid(userId)) {
+    if (![id, groupId, userId].every(isId)) {
       return res.status(400).json({ message: 'Invalid id(s)' });
     }
 
@@ -684,20 +773,19 @@ export const addGroupMember = async (req, res) => {
 
     await Tournament.updateOne(
       { _id: id, 'groups._id': groupId },
-      { $addToSet: { 'groups.$.memberIds': new mongoose.Types.ObjectId(userId) } },
+      { $addToSet: { 'groups.$.memberIds': toObjectId(userId) } },
       { runValidators: false }
     );
 
-    // ensure room exists and contains this member
     const t2 = await Tournament.findById(id).select('groups').lean();
-    const g = (t2?.groups || []).find(g => String(g._id) === String(groupId));
+    const g = (t2?.groups || []).find(x => String(x._id) === String(groupId));
     if (!g) return res.status(404).json({ message: 'Group not found' });
 
     let roomId = g.roomId;
     if (!roomId) {
       const room = await Room.create({
-        tournamentId: new mongoose.Types.ObjectId(id),
-        groupId: group._id,
+        tournamentId: toObjectId(id),
+        groupId: g._id,
         groupName: g.name,
         participants: (g.memberIds || []).map(u => ({ userId: u })),
         messages: [{
@@ -718,15 +806,14 @@ export const addGroupMember = async (req, res) => {
     }
 
     await Room.updateOne(
-      { _id: roomId, 'participants.userId': { $ne: userId } },
-      { $push: { participants: { userId } } }
+      { _id: roomId, 'participants.userId': { $ne: toObjectId(userId) } },
+      { $push: { participants: { userId: toObjectId(userId) } } }
     );
 
     const out = await Tournament.findById(id)
       .populate('groups.memberIds', 'name avatarUrl')
       .lean();
 
-    // ✅ return array
     res.json(out.groups || []);
   } catch (e) {
     console.error('addGroupMember error:', e);
@@ -734,7 +821,6 @@ export const addGroupMember = async (req, res) => {
   }
 };
 
-// POST /api/tournaments/:id/groups  body: { name, memberIds: [...] } (org/admin)
 export const createGroup = async (req, res) => {
   try {
     const { id } = req.params;
@@ -750,12 +836,12 @@ export const createGroup = async (req, res) => {
     }
 
     const clean = Array.isArray(memberIds)
-      ? memberIds.filter(Boolean).map(m => new mongoose.Types.ObjectId(m))
+      ? memberIds.filter(Boolean).map(m => toObjectId(m))
       : [];
 
     const group = {
       _id: new mongoose.Types.ObjectId(),
-      name: (name && String(name).trim()) || `Group ${ (t.groups?.length || 0) + 1 }`,
+      name: (name && String(name).trim()) || `Group ${(t.groups?.length || 0) + 1}`,
       memberIds: clean,
       roomId: null,
     };
@@ -768,13 +854,11 @@ export const createGroup = async (req, res) => {
   }
 };
 
-
-// GET /api/tournaments/:id/groups (org/admin)
 export const listGroups = async (req, res) => {
   try {
     const t = await Tournament.findById(req.params.id)
       .populate('groups.memberIds', 'name avatarUrl organizationInfo');
-    if (!t) return res.status(404).json({ message: 'Tournament not found' });
+  if (!t) return res.status(404).json({ message: 'Tournament not found' });
 
     const me = String(req.user?._id || '');
     const owner = ownerIdOf(t);
@@ -788,20 +872,15 @@ export const listGroups = async (req, res) => {
   }
 };
 
-
 /* =========================
    Group Rooms (chat)
 ========================= */
 
-
-// --- Player: find my group in a tournament ---
 export const getMyGroup = async (req, res) => {
   try {
     const { id } = req.params;
     const me = req.user?._id;
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ message: 'Invalid tournament id' });
-    }
+    if (!isId(id)) return res.status(400).json({ message: 'Invalid tournament id' });
     if (!me) return res.status(401).json({ message: 'Auth required' });
 
     const t = await Tournament.findById(id).select('groups').lean();
@@ -811,7 +890,6 @@ export const getMyGroup = async (req, res) => {
       Array.isArray(g.memberIds) && g.memberIds.some((u) => idsMatch(u, me))
     );
 
-    // return null instead of 404 so UI can show "groups not formed yet"
     return res.json({ group: g || null });
   } catch (e) {
     console.error('getMyGroup error:', e);
@@ -819,70 +897,11 @@ export const getMyGroup = async (req, res) => {
   }
 };
 
-
-// --- Player: open my group's room (auto-create if needed) & read messages ---
 export const getMyGroupRoomMessages = async (req, res) => {
   try {
     const { id } = req.params;
     const me = req.user?._id;
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ message: 'Invalid tournament id' });
-    }
-    if (!me) return res.status(401).json({ message: 'Auth required' });
-
-    const t = await Tournament.findById(id);
-    if (!t) return res.status(404).json({ message: 'Tournament not found' });
-
-    const group = (t.groups || []).find(g =>
-      Array.isArray(g.memberIds) && g.memberIds.some((u) => idsMatch(u, me))
-    );
-    if (!group) return res.status(404).json({ message: 'You are not in any group yet' });
-
-    const room = await (async () => {
-      if (group.roomId) return await Room.findById(group.roomId);
-      // ensure
-      const room = await Room.create({
-        tournamentId: t._id,
-        groupId: group._id,
-        groupName: group.name,
-        participants: (group.memberIds || []).map(uid => ({ userId: uid })),
-        messages: [{
-          senderId: me,
-          content: `Room created for ${group.name}.`,
-          type: 'system',
-          timestamp: new Date(),
-        }],
-        settings: { onlyOrgCanMessage: true },
-      });
-      await Tournament.updateOne(
-        { _id: id, 'groups._id': group._id },
-        { $set: { 'groups.$.roomId': r._id } },
-        { runValidators: false }
-      );
-      return r;
-    })();
-
-    const full = await Room.findById(room._id).populate('messages.senderId', 'name avatarUrl role');
-    return res.json({ group: { _id: group._id, name: group.name, roomId: room._id }, room: { _id: room._id, messages: full?.messages || [] } });
-  } catch (e) {
-    console.error('getMyGroupRoomMessages error:', e);
-    return res.status(500).json({ message: 'Failed to fetch messages' });
-  }
-};
-
-
-
-
-// --- Player: send message to my group's room ---
-export const sendMyGroupRoomMessage = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const me = req.user?._id;
-    const { content, type = 'text', imageUrl = null } = req.body;
-
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ message: 'Invalid tournament id' });
-    }
+    if (!isId(id)) return res.status(400).json({ message: 'Invalid tournament id' });
     if (!me) return res.status(401).json({ message: 'Auth required' });
 
     const t = await Tournament.findById(id);
@@ -894,6 +913,50 @@ export const sendMyGroupRoomMessage = async (req, res) => {
     if (!group) return res.status(404).json({ message: 'You are not in any group yet' });
 
     // ensure room
+    let room;
+    if (group.roomId) {
+      room = await Room.findById(group.roomId);
+    } else {
+      room = await Room.create({
+        tournamentId: t._id,
+        groupId: group._id,
+        groupName: group.name,
+        participants: (group.memberIds || []).map(uid => ({ userId: uid })),
+        messages: [{ }],
+        settings: { onlyOrgCanMessage: true },
+      });
+      await Tournament.updateOne(
+        { _id: id, 'groups._id': group._id },
+        { $set: { 'groups.$.roomId': room._id } },
+        { runValidators: false }
+      );
+    }
+
+    const full = await Room.findById(room._id).populate('messages.senderId', 'name avatarUrl role');
+    return res.json({ group: { _id: group._id, name: group.name, roomId: room._id }, room: { _id: room._id, messages: full?.messages || [] } });
+  } catch (e) {
+    console.error('getMyGroupRoomMessages error:', e);
+    return res.status(500).json({ message: 'Failed to fetch messages' });
+  }
+};
+
+export const sendMyGroupRoomMessage = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const me = req.user?._id;
+    const { content, type = 'text', imageUrl = null } = req.body;
+
+    if (!isId(id)) return res.status(400).json({ message: 'Invalid tournament id' });
+    if (!me) return res.status(401).json({ message: 'Auth required' });
+
+    const t = await Tournament.findById(id);
+    if (!t) return res.status(404).json({ message: 'Tournament not found' });
+
+    const group = (t.groups || []).find(g =>
+      Array.isArray(g.memberIds) && g.memberIds.some((u) => idsMatch(u, me))
+    );
+    if (!group) return res.status(404).json({ message: 'You are not in any group yet' });
+
     let roomId = group.roomId;
     if (!roomId) {
       const room = await Room.create({
@@ -929,9 +992,6 @@ export const sendMyGroupRoomMessage = async (req, res) => {
   }
 };
 
-
-
-
 const ensureGroupRoom = async (tournamentId, group) => {
   let room = null;
 
@@ -940,14 +1000,14 @@ const ensureGroupRoom = async (tournamentId, group) => {
   }
 
   if (!room) {
-     room = await Room.create({
-   tournamentId,
-   groupId: group._id,                     // ← important
-   groupName: group.name,
-   participants: (group.memberIds || []).map((uid) => ({ userId: uid })),
-   messages: [],
-   settings: { onlyOrgCanMessage: true },
- });
+    room = await Room.create({
+      tournamentId,
+      groupId: group._id,
+      groupName: group.name,
+      participants: (group.memberIds || []).map((uid) => ({ userId: uid })),
+      messages: [],
+      settings: { onlyOrgCanMessage: true },
+    });
     group.roomId = room._id;
     await Tournament.updateOne(
       { _id: tournamentId, 'groups._id': group._id },
@@ -956,6 +1016,7 @@ const ensureGroupRoom = async (tournamentId, group) => {
     );
   }
 
+  // normalize message ids if needed
   if (room?.messages?.some((msg) => !msg?._id || typeof msg._id === 'string')) {
     const patchedMessages = room.messages.map((msg) => {
       const plain = msg.toObject ? msg.toObject({ depopulate: true }) : { ...msg };
@@ -966,10 +1027,7 @@ const ensureGroupRoom = async (tournamentId, group) => {
           : mongoose.Types.ObjectId.isValid(currentId)
           ? new mongoose.Types.ObjectId(currentId)
           : new mongoose.Types.ObjectId();
-      return {
-        ...plain,
-        _id: normalizedId,
-      };
+      return { ...plain, _id: normalizedId };
     });
 
     await Room.updateOne(
@@ -984,7 +1042,6 @@ const ensureGroupRoom = async (tournamentId, group) => {
   return room;
 };
 
-// GET /api/tournaments/:id/groups/:groupId/room/messages (org/admin OR group member)
 export const getGroupRoomMessages = async (req, res) => {
   try {
     const { id, groupId } = req.params;
@@ -1009,7 +1066,6 @@ export const getGroupRoomMessages = async (req, res) => {
   }
 };
 
-// POST /api/tournaments/:id/groups/:groupId/room/messages (org/admin only by default)
 export const sendGroupRoomMessage = async (req, res) => {
   try {
     const { id, groupId } = req.params;
@@ -1043,7 +1099,6 @@ export const sendGroupRoomMessage = async (req, res) => {
     return res.status(500).json({ message: 'Failed to send message' });
   }
 };
-
 
 export const editMyGroupRoomMessage = async (req, res) => {
   try {
@@ -1104,16 +1159,10 @@ export const deleteMyGroupRoomMessage = async (req, res) => {
     }
 
     await Room.updateOne(
-      { _id: room._id, 'messages._id': toObjectId(messageId) },
-      {
-        $set: {
-          'messages.$.type': 'deleted',
-          'messages.$.content': '',
-          'messages.$.imageUrl': null,
-          'messages.$.deletedAt': new Date(),
-        },
-      }
+      { _id: room._id },
+      { $pull: { messages: { _id: toObjectId(messageId) } } }
     );
+
     return res.json({ ok: true });
   } catch (e) {
     console.error('deleteMyGroupRoomMessage error:', e);
@@ -1121,102 +1170,6 @@ export const deleteMyGroupRoomMessage = async (req, res) => {
   }
 };
 
-
-// // controllers/roomController.js
-// import Room from '../models/Room.js';
-
-// const findOrCreateRoom = async (tournamentId, groupId, participants = []) => {
-//   let room = await Room.findOne({ tournamentId, groupId });
-//   if (!room) {
-//     room = await Room.create({ tournamentId, groupId, participants });
-//   }
-//   return room;
-// };
-
-// // Send message
-// export const sendGroupRoomMessage = async (req, res) => {
-//   try {
-//     const { tournamentId, groupId } = req.params;
-//     const { content, type = 'text', imageUrl = null } = req.body;
-//     const senderId = req.user?._id || req.body.senderId;
-
-//     if (!content && !imageUrl) {
-//       return res.status(400).json({ error: 'content or imageUrl required' });
-//     }
-
-//     const room = await findOrCreateRoom(tournamentId, groupId);
-//     const msg = { senderId, content, type, imageUrl };
-//     room.messages.push(msg);
-//     await room.save();
-
-//     // optional: Socket.IO emit here if you use io instance
-//     // req.app.get('io')?.to(room._id.toString()).emit('room:message:new', { roomId: room._id, message: room.messages.at(-1) });
-
-//     return res.status(201).json({ roomId: room._id, message: room.messages.at(-1) });
-//   } catch (e) {
-//     console.error('sendGroupRoomMessage error', e);
-//     res.status(500).json({ error: 'failed_to_send_message' });
-//   }
-// };
-
-// // Edit message
-// export const editGroupRoomMessage = async (req, res) => {
-//   try {
-//     const { tournamentId, groupId, messageId } = req.params;
-//     const { content } = req.body;
-//     if (!content) return res.status(400).json({ error: 'content required' });
-
-//     const room = await Room.findOne({ tournamentId, groupId });
-//     if (!room) return res.status(404).json({ error: 'room_not_found' });
-
-//     const msg = room.messages.id(messageId);
-//     if (!msg) return res.status(404).json({ error: 'message_not_found' });
-
-//     // Optional: only author can edit
-//     // if (String(msg.senderId) !== String(req.user._id)) return res.status(403).json({ error: 'forbidden' });
-
-//     msg.content = content;
-//     msg.editedAt = new Date();
-//     await room.save();
-
-//     // req.app.get('io')?.to(room._id.toString()).emit('room:message:edited', { roomId: room._id, message: msg });
-
-//     return res.json({ message: msg });
-//   } catch (e) {
-//     console.error('editGroupRoomMessage error', e);
-//     res.status(500).json({ error: 'failed_to_edit_message' });
-//   }
-// };
-
-// // Delete (soft) message
-// export const deleteGroupRoomMessage = async (req, res) => {
-//   try {
-//     const { tournamentId, groupId, messageId } = req.params;
-//     const room = await Room.findOne({ tournamentId, groupId });
-//     if (!room) return res.status(404).json({ error: 'room_not_found' });
-
-//     const msg = room.messages.id(messageId);
-//     if (!msg) return res.status(404).json({ error: 'message_not_found' });
-
-//     // Optional: only author/admin
-//     // if (String(msg.senderId) !== String(req.user._id) && !req.user?.isAdmin) return res.status(403).json({ error: 'forbidden' });
-
-//     msg.type = 'deleted';
-//     msg.content = '';
-//     msg.imageUrl = null;
-//     msg.deletedAt = new Date();
-//     await room.save();
-
-//     // req.app.get('io')?.to(room._id.toString()).emit('room:message:deleted', { roomId: room._id, messageId });
-
-//     return res.json({ ok: true });
-//   } catch (e) {
-//     console.error('deleteGroupRoomMessage error', e);
-//     res.status(500).json({ error: 'failed_to_delete_message' });
-//   }
-// };
-
-// DELETE /api/tournaments/:id/groups/:groupId/room
 export const deleteGroupRoom = async (req, res) => {
   try {
     const { id, groupId } = req.params;
@@ -1253,9 +1206,3 @@ export const deleteGroupRoom = async (req, res) => {
     return res.status(500).json({ message: 'Failed to delete room' });
   }
 };
-
-
-
-
-
-

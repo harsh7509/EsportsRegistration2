@@ -15,20 +15,11 @@ const REFRESH_KEY = 'refreshToken';
 const getToken = () => localStorage.getItem(ACCESS_KEY);
 const getRefreshToken = () => localStorage.getItem(REFRESH_KEY);
 
-const setTokens = (accessToken, refreshToken) => {
-  // store
-  if (accessToken) {
-    localStorage.setItem(ACCESS_KEY, accessToken);
-    // ensure axios uses the fresh token immediately
-    api.defaults.headers.common.Authorization = `Bearer ${accessToken}`;
-  } else {
-    localStorage.removeItem(ACCESS_KEY);
-    delete api.defaults.headers.common.Authorization;
-  }
-
-  if (typeof refreshToken !== 'undefined' && refreshToken !== null) {
-    localStorage.setItem(REFRESH_KEY, refreshToken);
-  }
+// helper to store tokens (already used by Login/Signup)
+ const setTokens = (access, refresh) => {
+  if (access) localStorage.setItem('accessToken', access);
+  if (refresh) localStorage.setItem('refreshToken', refresh);
+  api.defaults.headers.common.Authorization = `Bearer ${access}`;
 };
 
 // Profile API (player's own data)
@@ -109,13 +100,15 @@ api.interceptors.response.use(
 
 // Auth API
 export const authAPI = {
-  register: (userData) => api.post('/auth/register', userData),
-  login: (credentials) => api.post('/auth/login', credentials),
+  register: (body) => api.post('/auth/register', body),
+  login: (body) => api.post('/auth/login', body),
   refresh: (refreshToken) => api.post('/auth/refresh', { refreshToken }),
   getMe: () => api.get('/auth/me'),
   me: () => api.get('/auth/me'),
   updateProfile: (data) => api.put('/auth/profile', data),
   switchRole: (role) => api.post('/auth/switch-role', { role }),
+  sendOtp: (body) => api.post('/auth/otp/send', body),      // { tempToken, channel: 'email' | 'phone' }
+  verifyOtp: (body) => api.post('/auth/otp/verify', body),
 };
 
 // Upload API
@@ -168,18 +161,24 @@ export const tournamentsAPI = {
   deleteTournament: (tid) => api.delete(`/tournaments/${tid}`),
 
   // registration
-  register: (tournamentId) => api.post(`/tournaments/${tournamentId}/register`),
+  // registration (✅ accepts payload now)
+  
+  register: (tournamentId, data) => api.post(`/tournaments/${tournamentId}/register`, data),
 
   // participants & groups (protected)
   getParticipants: (tournamentId) => api.get(`/tournaments/${tournamentId}/participants`),
+  removeParticipant: (tournamentId, userId) =>
+    api.delete(`/tournaments/${tournamentId}/participants/${userId}`),
   createGroup: (id, payload) => api.post(`/tournaments/${id}/groups`, payload),
   listGroups: (tournamentId) => api.get(`/tournaments/${tournamentId}/groups`),
+
+  getMyGroupTeams: (id) => api.get(`/tournaments/${id}/my-group/teams`),
   addGroupMember: (tournamentId, groupId, body) =>
     api.post(`/tournaments/${tournamentId}/groups/${groupId}/members`, body),
 
   // auto group (single definition)
   autoGroup: (tournamentId, size = 4) =>
-    api.post(`/tournaments/${tournamentId}/groups/auto`, null, { params: { size } }),
+    api.post(`/tournaments/${tournamentId}/groups/auto`, {}, { params: { size } }),
 
   // group rooms (org/admin)
   createGroupRoom: (tournamentId, groupId) =>
@@ -245,6 +244,10 @@ export const organizationsAPI = {
   updateOrganizationRanking: (orgId, ranking) => api.put(`/orgs/${orgId}/ranking`, { ranking }),
   getAllOrganizations: () => api.get('/orgs'),
   rate: (orgId, data) => api.post(`/organizations/${orgId}/rate`, data),
+    // KYC
+  submitKyc: (formData) =>
+    api.post('/orgs/verify/submit', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  myKyc: () => api.get('/orgs/verify/me'),
 };
 
 // Admin API
@@ -259,6 +262,9 @@ export const adminAPI = {
   deletePromotion: (promoId) => api.delete(`/admin/promotions/${promoId}`),
   trackPromoClick: (promoId) => api.post(`/admin/promotions/${promoId}/click`),
   updateUser: (userId, data) => api.put(`/admin/users/${userId}`, data),
+    // KYC review
+  listOrgKyc: () => api.get('/admin/org-kyc'),
+  reviewOrgKyc: (userId, action, notes) => api.post(`/admin/org-kyc/${userId}/review`, { action, notes }),
 };
 
 

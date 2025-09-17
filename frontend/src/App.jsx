@@ -7,10 +7,12 @@ import TournamentList from './pages/TournamentList';
 
 import EditTournament from './pages/EditTournament';
 import TournamentManage from './pages/TournamentManage';
-
+import VerifyOrg from './pages/VerifyOrg';  
 
 
 import ErrorBoundary from './ErrorBoundary';
+
+
 
 // Lazy-load everything except the top nav so one bad page can't blank the app
 const Navbar = lazy(() => import('./components/Navbar'));
@@ -63,8 +65,19 @@ function App() {
               <Route path="/tournaments/:id" element={<TournamentDetail />} />
               <Route path="/tournaments" element={<TournamentList />} />
               <Route path="/tournaments/:id/edit" element={<EditTournament />} />
+              
              
 <Route path="/tournaments/:id/manage" element={<TournamentManage />} />
+ <Route
+   path="/org/verify"
+   element={
+     <ProtectedRoute>
+       <RoleGuard allowedRoles={['organization']}>
+         <VerifyOrg />
+       </RoleGuard>
+     </ProtectedRoute>
+   }
+ />
 
 
 

@@ -5,6 +5,8 @@ import { tournamentsAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 
+const emptyPlayer = () => ({ ignName: '', ignId: '' });
+
 const TournamentDetails = () => {
   const { id } = useParams();
   const { user } = useAuth();
@@ -13,15 +15,19 @@ const TournamentDetails = () => {
   const [loading, setLoading] = useState(true);
   const [registering, setRegistering] = useState(false);
 
+  // NEW: inline registration form state
+  const [showRegForm, setShowRegForm] = useState(false);
+  const [teamName, setTeamName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [realName, setRealName] = useState('');
+  const [players, setPlayers] = useState([emptyPlayer(), emptyPlayer(), emptyPlayer(), emptyPlayer(), emptyPlayer()]); // 5th optional
+
   useEffect(() => {
     (async () => {
       try {
-        // Works with either tournamentsAPI.getDetails(id) or tournamentsAPI.get(id)
         const res = await (tournamentsAPI.getDetails
           ? tournamentsAPI.getDetails(id)
           : tournamentsAPI.get(id));
-
-        // Accept both { tournament } and plain document
         const doc = res?.data?.tournament || res?.data || null;
         setT(doc);
       } catch (e) {
@@ -33,25 +39,31 @@ const TournamentDetails = () => {
     })();
   }, [id]);
 
-  const handleRegister = async () => {
+  const submitRegister = async () => {
     try {
-      if (!user) {
-        toast.error('Please sign in to register');
-        return;
-      }
+      if (!user) return toast.error('Please sign in to register');
 
-      const tid = t?._id || id;
-      if (!tid) {
-        toast.error('Missing tournament id');
-        return;
-      }
+      // basic client-side checks
+      const p = players.slice(0, 5);
+      const firstFourOk = p.slice(0, 4).every(pp => pp.ignName.trim() && pp.ignId.trim());
+      if (!teamName.trim()) return toast.error('Team name required');
+      if (!phone.trim()) return toast.error('Phone number required');
+      if (!realName.trim()) return toast.error('Your real name required');
+      if (!firstFourOk) return toast.error('Players 1–4 need IGN name & ID');
 
       setRegistering(true);
-      const res = await tournamentsAPI.register(tid);
+      const res = await tournamentsAPI.register(t?._id || id, {
+        teamName,
+        phone,
+        realName,
+        players: p.filter(x => x.ignName || x.ignId), // send 4–5
+      });
       const updated = res?.data?.tournament || res?.data;
 
-      // Update the local view
-      setT(prev => updated || (prev ? { ...prev, registeredCount: (prev.registeredCount || 0) + 1 } : prev));
+      setT(prev =>
+        updated || (prev ? { ...prev, registeredCount: (prev.registeredCount || 0) + 1 } : prev)
+      );
+      setShowRegForm(false);
       toast.success('Registered!');
     } catch (e) {
       console.error('Register failed:', e);
@@ -64,19 +76,14 @@ const TournamentDetails = () => {
   if (loading) return <div className="max-w-5xl mx-auto p-6">Loading...</div>;
   if (!t) return <div className="max-w-5xl mx-auto p-6 text-red-400">Tournament not found</div>;
 
-  // Normalize date
   const dateValue = t?.startAt || t?.timeSlot?.start || t?.date;
   const dateStr = dateValue ? new Date(dateValue).toLocaleString() : 'TBA';
-
-  // Normalize org (could be object or id string)
   const org = typeof t.organizationId === 'object' ? t.organizationId : null;
 
   return (
     <div className="max-w-5xl mx-auto p-6 space-y-6">
       <div className="bg-gray-800 rounded-lg overflow-hidden">
-        {t.bannerUrl && (
-          <img src={t.bannerUrl} alt={t.title} className="w-full h-64 object-cover" />
-        )}
+        {t.bannerUrl && <img src={t.bannerUrl} alt={t.title} className="w-full h-64 object-cover" />}
 
         <div className="p-6">
           <h1 className="text-3xl font-bold mb-2">{t.title}</h1>
@@ -141,19 +148,15 @@ const TournamentDetails = () => {
             </>
           )}
 
+          {/* Register area */}
           <div className="flex gap-3 pt-4">
             {t.registrationUrl ? (
-              <a
-                href={t.registrationUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="btn-primary inline-flex items-center"
-              >
+              <a href={t.registrationUrl} target="_blank" rel="noreferrer" className="btn-primary inline-flex items-center">
                 Register Now <ExternalLink className="h-4 w-4 ml-2" />
               </a>
             ) : (
-              <button onClick={handleRegister} className="btn-primary" disabled={registering}>
-                {registering ? 'Registering…' : 'Register Now'}
+              <button onClick={() => setShowRegForm(v => !v)} className="btn-primary">
+                {showRegForm ? 'Hide Form' : 'Register Now'}
               </button>
             )}
 
@@ -163,6 +166,39 @@ const TournamentDetails = () => {
               </Link>
             )}
           </div>
+
+          {/* Inline Registration Form */}
+          {showRegForm && (
+            <div className="mt-4 p-4 rounded bg-gray-900 border border-gray-700 space-y-3">
+              <div className="grid md:grid-cols-3 gap-3">
+                <input className="input" placeholder="Team name" value={teamName} onChange={e => setTeamName(e.target.value)} />
+                <input className="input" placeholder="Phone number" value={phone} onChange={e => setPhone(e.target.value)} />
+                <input className="input" placeholder="Your real name" value={realName} onChange={e => setRealName(e.target.value)} />
+              </div>
+
+              <div className="grid md:grid-cols-5 gap-3">
+                {players.map((p, idx) => (
+                  <div key={idx} className="space-y-2">
+                    <div className="text-xs text-gray-400">Player {idx + 1}{idx < 4 ? ' *' : ' (optional)'}</div>
+                    <input className="input" placeholder="IGN name" value={p.ignName}
+                      onChange={e => {
+                        const a = [...players]; a[idx] = { ...a[idx], ignName: e.target.value }; setPlayers(a);
+                      }} />
+                    <input className="input" placeholder="IGN ID" value={p.ignId}
+                      onChange={e => {
+                        const a = [...players]; a[idx] = { ...a[idx], ignId: e.target.value }; setPlayers(a);
+                      }} />
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex justify-end">
+                <button className="btn-primary" disabled={registering} onClick={submitRegister}>
+                  {registering ? 'Registering…' : 'Submit Registration'}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

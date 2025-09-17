@@ -1,13 +1,48 @@
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 
+
+
+
+
+
+const OrgKycSchema = new mongoose.Schema(
+  {
+    status: { type: String, enum: ["unsubmitted", "pending", "approved", "rejected"], default: "unsubmitted" },
+    legalName: { type: String, default: "" },
+    email: { type: String, default: "" },
+    dob: { type: Date },
+    aadhaarNumber: { type: String, default: "" },          // TIP: display me mask karna
+    aadhaarImageUrl: { type: String, default: "" },
+    selfieWithAadhaarUrl: { type: String, default: "" },
+    notes: { type: String, default: "" },
+    submittedAt: { type: Date },
+    reviewedAt: { type: Date },
+    reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+  },
+  { _id: false }
+);
+
+
+const LoginOtpSchema = new mongoose.Schema(
+  {
+    channel: { type: String, enum: ["email"], default: "email" },
+    codeHash: { type: String, required: true },
+    expiresAt: { type: Date, required: true },
+    attempts: { type: Number, default: 0 },
+  },
+  { _id: false }
+);
+
 const userSchema = new mongoose.Schema(
   {
-    name: { type: String, required: true },
-    email: { type: String, required: true, unique: true },
+    name: { type: String, required: true, trim: true },
+    email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+    phone: { type: String, default: "" },
+
+    // Store the (hashed) password in this field
     password: { type: String, required: true },
 
-    // used by your UI to render the avatar everywhere
     avatarUrl: { type: String, default: null },
 
     role: {
@@ -16,34 +51,35 @@ const userSchema = new mongoose.Schema(
       default: "player",
     },
 
-    // keep legacy fields if you want, but prefer avatarUrl everywhere
-    profileImage: { type: String, default: "" },
-
-    // ✅ match the UI (orgName/location/verified/ranking)
     organizationInfo: {
       orgName: { type: String, default: "" },
       location: { type: String, default: "" },
       verified: { type: Boolean, default: false },
       ranking: { type: Number, default: 1000 },
-
-      // optional extras if you still want them
       description: { type: String, default: "" },
       logo: { type: String, default: "" },
     },
 
-    // For players (optional)
+    orgKyc: { type: OrgKycSchema, default: () => ({}) },
+
     playerInfo: {
       ign: { type: String },
       rank: { type: String },
       team: { type: String },
     },
 
+    emailVerified: { type: Boolean, default: false },
+    phoneVerified: { type: Boolean, default: false },
+
+    // Used for the signup email OTP step
+    loginOtp: { type: LoginOtpSchema, default: null },
+
     isActive: { type: Boolean, default: true },
   },
   { timestamps: true }
 );
 
-// Hash password
+// Hash password on save if modified
 userSchema.pre("save", async function (next) {
   if (!this.isModified("password")) return next();
   try {
@@ -55,9 +91,8 @@ userSchema.pre("save", async function (next) {
   }
 });
 
-// Compare password
-userSchema.methods.comparePassword = async function (enteredPassword) {
-  return bcrypt.compare(enteredPassword, this.password);
+userSchema.methods.comparePassword = async function (pwd) {
+  return bcrypt.compare(pwd, this.password);
 };
 
-export default mongoose.model("User", userSchema);
+export default mongoose.models.User || mongoose.model("User", userSchema);

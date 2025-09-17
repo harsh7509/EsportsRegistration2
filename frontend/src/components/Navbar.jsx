@@ -9,6 +9,7 @@ const Navbar = () => {
   const [showDropdown, setShowDropdown] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const dropdownRef = useRef(null);
+  
   const navigate = useNavigate();
 
   // Close dropdown when clicking outside
@@ -73,7 +74,7 @@ const Navbar = () => {
               Tournaments
             </Link>
           </div>
-          
+
 
           {/* User Menu */}
           <div className="flex items-center space-x-4">
@@ -108,8 +109,8 @@ const Navbar = () => {
                       <p className="text-sm font-medium text-white">{user.name}</p>
                       <p className="text-xs text-gray-400">{user.email}</p>
                       <span className={`inline-block mt-1 px-2 py-1 rounded text-xs font-medium ${user.role === 'admin' ? 'bg-red-500/20 text-red-400' :
-                          user.role === 'organization' ? 'bg-blue-500/20 text-blue-400' :
-                            'bg-green-500/20 text-green-400'
+                        user.role === 'organization' ? 'bg-blue-500/20 text-blue-400' :
+                          'bg-green-500/20 text-green-400'
                         }`}>
                         {user.role}
                       </span>
@@ -158,7 +159,12 @@ const Navbar = () => {
                           >
                             🏆 My Org Profile
                           </Link>
+                          {user.role === 'organization' && (
+                            <Link to="/org/verify" className="...">✅ Verify your org</Link>
+                          )}
+
                         </>
+
                       );
                     })()}
                     <hr className="my-2 border-gray-700" />

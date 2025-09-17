@@ -1,7 +1,8 @@
 // backend/server.js
+import dotenv from 'dotenv';
 import express from 'express';
 import mongoose from 'mongoose';
-import dotenv from 'dotenv';
+
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -14,18 +15,23 @@ import organizationsRoutes from './src/routes/Organizations.js';
 import ensureRoomIndexes from './src/startup/ensureRoomIndexes.js';
 
 
+
+
 // ⬇️ ROUTES (adjust paths to your actual files)
 import scrimRoutes from './src/routes/scrims.js';
 import uploadRoutes from './src/routes/upload.js';
 import profileRoutes from './src/routes/ProfileRoutes.js';
 import adminRoutes from './src/routes/admin.js';
 import orgRoutes from './src/routes/Organizations.js';
-
 import promosRoutes from './src/routes/promos.js';
 
 
-
-
+// --- automatic cleanup: delete scrims older than 7 days (keep org ratings) ---
+import Scrim from './src/models/Scrim.js';
+import Booking from './src/models/Booking.js';
+import Room from './src/models/Room.js';
+import Payment from './src/models/Payment.js';
+import Promotion from './src/models/Promotion.js';
 
 
 dotenv.config();
@@ -107,6 +113,50 @@ io.on('connection', (socket) => {
 
 // Share io with controllers if needed:
 app.set('io', io);
+
+
+
+
+
+
+// runs once and then every CLEANUP_EVERY_HOURS (default daily)
+const CLEANUP_EVERY_HOURS = Number(process.env.CLEANUP_EVERY_HOURS || 24);
+
+async function purgeOldScrims() {
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+  // find scrims that finished > 7 days ago
+  const oldScrims = await Scrim.find({
+    'timeSlot.end': { $lt: sevenDaysAgo }
+  }).select('_id');
+
+  if (!oldScrims.length) return;
+
+  const ids = oldScrims.map(s => s._id);
+
+  // delete dependent data; DO NOT touch OrgRating
+  await Promise.all([
+    Booking.deleteMany({ scrimId: { $in: ids } }),
+    Room.deleteMany({ scrimId: { $in: ids } }),
+    Payment.deleteMany({ scrimId: { $in: ids } }),
+
+    // either unlink promos from the scrim so the promo item remains…
+    Promotion.updateMany({ scrimId: { $in: ids } }, { $unset: { scrimId: 1 } }),
+
+    // …or if you prefer to remove promos entirely, use:
+    // Promotion.deleteMany({ scrimId: { $in: ids } }),
+
+    Scrim.deleteMany({ _id: { $in: ids } }),
+  ]);
+
+  console.log(`🧹 Purged ${ids.length} old scrim(s) and related data`);
+}
+
+// kick off after DB connects, then schedule
+mongoose.connection.once('open', () => {
+  purgeOldScrims().catch(console.error);
+  setInterval(() => purgeOldScrims().catch(console.error), CLEANUP_EVERY_HOURS * 60 * 60 * 1000);
+});
 
 // Start
 mongoose

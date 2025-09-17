@@ -1,5 +1,6 @@
 import express from 'express';
 import { authenticate, roleGuard } from '../middlewares/auth.js';
+import { listOrgKyc, reviewOrgKyc } from '../controllers/OrgKycController.js';
 import {
   getDashboardStats,
   getAllUsers,
@@ -33,5 +34,10 @@ router.post('/promotions', createPromotion);
 router.put('/promotions/:promoId', updatePromotion);
 router.delete('/promotions/:promoId', deletePromotion);
 router.post('/promotions/:promoId/click', trackPromoClick);
+
+
+// Org KYC review
+router.get('/org-kyc', authenticate, listOrgKyc);
+router.post('/org-kyc/:userId/review', authenticate, reviewOrgKyc);
 
 export default router;

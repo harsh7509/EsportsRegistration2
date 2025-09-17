@@ -9,25 +9,39 @@ export default function PlayerGroupRoomModal({ open, onClose, tournamentId }) {
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState('');
   const fileRef = useRef(null);
+  const [teams, setTeams] = useState([]);
+
 
   useEffect(() => {
-    if (!open || !tournamentId) return;
-    (async () => {
-      try {
-        setLoading(true);
-        const res = await tournamentsAPI.getMyGroupRoomMessages(tournamentId);
-        setGroup(res?.data?.group || null);
-        setMessages(res?.data?.room?.messages || []);
-      } catch (e) {
-        const msg = e?.response?.data?.message || 'Failed to open group room';
-        toast.error(msg);
-        setGroup(null);
-        setMessages([]);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [open, tournamentId]);
+  if (!open || !tournamentId) return;
+  (async () => {
+    try {
+      setLoading(true);
+      const res = await tournamentsAPI.getMyGroupRoomMessages(tournamentId);
+      setGroup(res?.data?.group || null);
+      setMessages((res?.data?.room?.messages || []).filter(m => m.type !== 'system'));
+    } catch (e) {
+      toast.error(e?.response?.data?.message || 'Failed to open group room');
+      setGroup(null);
+      setMessages([]);
+    } finally {
+      setLoading(false);
+    }
+  })();
+
+  (async () => {
+    try {
+      const tRes = await tournamentsAPI.getMyGroupTeams(tournamentId);
+      setTeams(Array.isArray(tRes?.data?.teams) ? tRes.data.teams : []);
+    } catch {
+      setTeams([]);
+    }
+  })();
+}, [open, tournamentId]);
+
+
+
+  
 
   const sendText = async (e) => {
     e?.preventDefault?.();
@@ -72,6 +86,21 @@ export default function PlayerGroupRoomModal({ open, onClose, tournamentId }) {
             <div className="text-gray-400">You are not in any group yet (or groups aren’t formed).</div>
           ) : (
             <>
+            {group && (
+  <div className="mb-3 p-3 rounded bg-gray-700">
+    <div className="text-sm font-semibold mb-2">Teams in your group</div>
+    {teams.length ? (
+      <ul className="text-sm list-disc list-inside space-y-1">
+        {teams.map(ti => (
+          <li key={ti.userId}>{ti.teamName}</li>
+        ))}
+      </ul>
+    ) : (
+      <div className="text-gray-400 text-sm">No teams found</div>
+    )}
+  </div>
+)}
+
               <div className="bg-gray-700 rounded p-3 h-80 overflow-auto space-y-2">
                 {messages.map((m, i) => (
                   <div key={i} className="p-2 rounded bg-gray-600">

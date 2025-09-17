@@ -1,20 +1,24 @@
+import 'dotenv/config';
 import jwt from 'jsonwebtoken';
 import { body, validationResult } from 'express-validator';
 import User from '../models/User.js';
+import crypto from 'crypto';
+import nodemailer from 'nodemailer';
+import bcrypt from 'bcryptjs';
 
-const generateTokens = (userId) => {
-  const accessToken = jwt.sign(
-    { userId },
-    process.env.JWT_SECRET,
-    { expiresIn: process.env.TOKEN_EXPIRES_IN || '15m' }
-  );
+const JWT_SECRET = process.env.JWT_SECRET;
 
-  const refreshToken = jwt.sign(
-    { userId },
-    process.env.JWT_REFRESH_SECRET,
-    { expiresIn: process.env.REFRESH_EXPIRES_IN || '7d' }
-  );
+// SMTP mailer (email-only OTP)
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: Number(process.env.SMTP_PORT || 587),
+  secure: Number(process.env.SMTP_PORT) === 465,
+  auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+});
 
+const issueTokens = (user) => {
+  const accessToken = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: process.env.TOKEN_EXPIRES_IN || '15m' });
+  const refreshToken = jwt.sign({ userId: user._id }, process.env.JWT_REFRESH_SECRET, { expiresIn: process.env.REFRESH_EXPIRES_IN || '7d' });
   return { accessToken, refreshToken };
 };
 
@@ -22,107 +26,90 @@ export const registerValidation = [
   body('name').trim().isLength({ min: 2 }).withMessage('Name must be at least 2 characters'),
   body('email').isEmail().normalizeEmail().withMessage('Valid email required'),
   body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
-  body('role').optional().isIn(['player', 'organization']).withMessage('Invalid role')
+  body('role').optional().isIn(['player', 'organization']).withMessage('Invalid role'),
 ];
 
 export const loginValidation = [
   body('email').isEmail().normalizeEmail().withMessage('Valid email required'),
-  body('password').notEmpty().withMessage('Password required')
+  body('password').notEmpty().withMessage('Password required'),
 ];
+
+const hash = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
+const genCode = () => String(Math.floor(100000 + Math.random() * 900000)); // 6 digits
+const issueTempToken = (userId, kind = 'signup_otp') =>
+  jwt.sign({ userId, kind }, JWT_SECRET, { expiresIn: '10m' });
+
+/** POST /api/auth/register */
 
 export const register = async (req, res) => {
   try {
-    console.log('📝 Registration attempt:', req.body);
-    
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      console.log('❌ Validation errors:', errors.array());
-      return res.status(400).json({ 
-        message: 'Validation failed',
-        errors: errors.array() 
-      });
+      return res.status(400).json({ message: 'Validation failed', errors: errors.array() });
     }
 
-    const { name, email, password, role = 'player' } = req.body;
-
-    // Check if user exists
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      console.log('❌ User already exists:', email);
-      return res.status(400).json({ message: 'User already exists with this email' });
+    // ✅ ENV sanity check FIRST (prevents partial user creation)
+    if (!process.env.JWT_SECRET || !process.env.JWT_REFRESH_SECRET) {
+      return res.status(500).json({ message: 'Server misconfigured: JWT secrets missing' });
     }
 
-    // Create user
-    const user = new User({ name, email, password, role });
-    await user.save();
-    console.log('✅ User created successfully:', user.email);
+    // normalize email
+    let { name, email, phone = '', password, role = 'player' } = req.body || {};
+    email = String(email).trim().toLowerCase();
 
-    // Generate tokens
-    const { accessToken, refreshToken } = generateTokens(user._id);
+    const exists = await User.findOne({ email });
+    if (exists) return res.status(409).json({ message: 'Email already in use' });
 
-    const userData = {
-      id: user._id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      organizationInfo: user.organizationInfo,
-      avatarUrl: user.avatarUrl,
-      reputation: user.reputation,
-      createdAt: user.createdAt
-    };
-
-    console.log('✅ Registration successful for:', email);
-
-    res.status(201).json({
-      user: userData,
-      accessToken,
-      refreshToken
+    // ✅ Create user
+    const user = await User.create({
+      name,
+      email,
+      phone,
+      password,
+      role,
+      emailVerified: false,
+      phoneVerified: false,
+      loginOtp: null,
     });
-  } catch (error) {
-    console.error('❌ Registration error:', error);
-    res.status(500).json({ message: 'Server error during registration' });
+
+    // ✅ Issue temp token (will not fail now because secrets checked)
+    const tempToken = jwt.sign({ userId: user._id, kind: 'signup_otp' }, process.env.JWT_SECRET, { expiresIn: '10m' });
+
+    return res.status(201).json({
+      otpRequired: true,
+      tempToken,
+      channels: { email: true },
+    });
+  } catch (e) {
+    console.error('register error:', e);
+    return res.status(500).json({ message: 'Registration failed' });
   }
 };
 
+
+/** POST /api/auth/login  (NO OTP HERE) */
 export const login = async (req, res) => {
   try {
-    console.log('🔐 Login attempt for:', req.body.email);
-    
     const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      console.log('❌ Validation errors:', errors.array());
-      return res.status(400).json({ 
-        message: 'Validation failed',
-        errors: errors.array() 
-      });
-    }
+    if (!errors.isEmpty()) return res.status(400).json({ message: 'Validation failed', errors: errors.array() });
 
-    const { email, password } = req.body;
-
-    // Find user
+    const { email, password } = req.body || {};
     const user = await User.findOne({ email });
-    if (!user) {
-      console.log('❌ User not found:', email);
-      return res.status(400).json({ message: 'Invalid credentials' });
-    }
+    if (!user) return res.status(400).json({ message: 'Invalid credentials' });
 
-    // Auto-assign admin role for specific email
+    // Optional: you can require emailVerified === true before login
+    // if (!user.emailVerified) return res.status(403).json({ message: 'Please verify your email first' });
+
+    const ok = await user.comparePassword(password);
+    if (!ok) return res.status(400).json({ message: 'Invalid credentials' });
+
+    // Admin auto-assign (keep your original special-case if needed)
     if (email === 'harsh.2201301022@geetauniversity.edu.in' && user.role !== 'admin') {
       user.role = 'admin';
       await user.save();
-      console.log('🔑 Admin role assigned to:', email);
     }
 
-    // Check password
-    const isMatch = await user.comparePassword(password);
-    if (!isMatch) {
-      console.log('❌ Invalid password for:', email);
-      return res.status(400).json({ message: 'Invalid credentials' });
-    }
-
-    // Generate tokens
-    const { accessToken, refreshToken } = generateTokens(user._id);
-
+    const tokens = issueTokens(user);
     const userData = {
       id: user._id,
       name: user.name,
@@ -131,129 +118,87 @@ export const login = async (req, res) => {
       organizationInfo: user.organizationInfo,
       avatarUrl: user.avatarUrl,
       reputation: user.reputation,
-      createdAt: user.createdAt
+      createdAt: user.createdAt,
     };
-
-    console.log('✅ Login successful for:', email, 'Role:', user.role);
-
-    res.json({
-      user: userData,
-      accessToken,
-      refreshToken
-    });
-  } catch (error) {
-    console.error('❌ Login error:', error);
+    return res.json({ user: userData, ...tokens });
+  } catch (e) {
+    console.error('login error:', e);
     res.status(500).json({ message: 'Server error during login' });
   }
 };
 
+/** POST /api/auth/refresh */
 export const refresh = async (req, res) => {
   try {
     const { refreshToken } = req.body;
-
-    if (!refreshToken) {
-      return res.status(401).json({ message: 'Refresh token required' });
-    }
+    if (!refreshToken) return res.status(401).json({ message: 'Refresh token required' });
 
     const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
     const user = await User.findById(decoded.userId);
+    if (!user) return res.status(401).json({ message: 'Invalid refresh token' });
 
-    if (!user) {
-      return res.status(401).json({ message: 'Invalid refresh token' });
-    }
-
-    const { accessToken } = generateTokens(user._id);
-
+    const { accessToken } = issueTokens(user);
     res.json({ accessToken });
-  } catch (error) {
-    console.error('❌ Refresh token error:', error);
+  } catch (e) {
+    console.error('refresh error:', e);
     res.status(401).json({ message: 'Invalid refresh token' });
   }
 };
 
+/** GET /api/auth/me */
 export const me = async (req, res) => {
   try {
     const user = await User.findById(req.user._id)
-      .select('name email role avatarUrl organizationInfo createdAt')
+      .select('name email role avatarUrl organizationInfo createdAt phone emailVerified phoneVerified')
       .lean();
-
     if (!user) return res.status(404).json({ message: 'User not found' });
 
-    res.json({
-      user: {
-        id: String(user._id),
-        _id: user._id,           // some UI paths use _id
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        avatarUrl: user.avatarUrl,         // <- IMPORTANT
-        organizationInfo: user.organizationInfo,
-        reputation: user.reputation || 0,
-        createdAt: user.createdAt,
-      }
-    });
-  } catch (err) {
-    console.error('❌ Get user error:', err);
+    res.json({ user: { ...user, id: String(user._id) } });
+  } catch (e) {
+    console.error('me error:', e);
     res.status(500).json({ message: 'Server error' });
   }
 };
 
-
+/** PUT /api/auth/profile */
 export const updateProfile = async (req, res) => {
   try {
     const userId = req.user?._id;
     if (!userId) return res.status(401).json({ message: 'Unauthorized' });
 
     const { name, avatarUrl, imageUrl, avatar, organizationInfo } = req.body;
-
-    console.log('📝 Updating profile for user:', userId);
-    console.log('📝 Update data:', { name, avatarUrl, imageUrl, avatar, organizationInfo });
-
-    // Build safe update payload (do not overwrite with undefined/empty)
     const payload = {};
 
-    if (typeof name !== 'undefined' && name !== '') {
-      payload.name = name;
-    }
+    if (typeof name === 'string' && name.trim()) payload.name = name.trim();
 
     const resolvedAvatar =
       (typeof avatarUrl === 'string' && avatarUrl.trim()) ||
       (typeof imageUrl === 'string' && imageUrl.trim()) ||
       (typeof avatar === 'string' && avatar.trim());
-
-    if (resolvedAvatar) {
-      payload.avatarUrl = resolvedAvatar;
-    }
+    if (resolvedAvatar) payload.avatarUrl = resolvedAvatar;
 
     if (organizationInfo && typeof organizationInfo === 'object') {
-      // Merge with existing
-      const current = (await User.findById(userId)) || {};
+      const current = await User.findById(userId);
       const currOrg = current.organizationInfo || {};
       payload.organizationInfo = {
         orgName: typeof organizationInfo.orgName === 'string' ? organizationInfo.orgName : currOrg.orgName || '',
         location: typeof organizationInfo.location === 'string' ? organizationInfo.location : currOrg.location || '',
-        verified:
-          typeof organizationInfo.verified === 'boolean'
-            ? organizationInfo.verified
-            : typeof currOrg.verified === 'boolean'
-            ? currOrg.verified
-            : false,
+        verified: typeof organizationInfo.verified === 'boolean'
+          ? organizationInfo.verified
+          : typeof currOrg.verified === 'boolean'
+          ? currOrg.verified
+          : false,
       };
     }
 
-    const user = await User.findByIdAndUpdate(userId, { $set: payload }, { new: true, runValidators: true }).select(
-      '-password'
-    );
-
+    const user = await User.findByIdAndUpdate(userId, { $set: payload }, { new: true }).select('-password');
     if (!user) return res.status(404).json({ message: 'User not found' });
-
-    console.log('✅ Profile updated successfully');
 
     res.json({
       message: 'Profile updated successfully',
       user: {
         id: user._id,
-        _id: user._id, // some parts of your UI use _id
+        _id: user._id,
         name: user.name,
         email: user.email,
         role: user.role,
@@ -263,51 +208,135 @@ export const updateProfile = async (req, res) => {
         createdAt: user.createdAt,
       },
     });
-  } catch (error) {
-    console.error('❌ Profile update error:', error);
+  } catch (e) {
+    console.error('updateProfile error:', e);
     res.status(500).json({ message: 'Server error updating profile' });
   }
 };
 
+/** POST /api/auth/switch-role (kept as you had it) */
 export const switchRole = async (req, res) => {
   try {
     const { role } = req.body;
-    const userId = req.user._id;
-
-    console.log('🔄 Role switch request for user:', userId, 'to role:', role);
-
-    // Verify user is admin email
-    const user = await User.findById(userId);
+    const user = await User.findById(req.user._id);
     if (!user || user.email !== 'harsh.2201301022@geetauniversity.edu.in') {
       return res.status(403).json({ message: 'Access denied - Admin only' });
     }
-
     if (!['admin', 'player', 'organization'].includes(role)) {
       return res.status(400).json({ message: 'Invalid role' });
     }
-
     user.role = role;
     await user.save();
-
-    console.log('✅ Role switched successfully to:', role);
-
-    const userData = {
-      id: user._id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      organizationInfo: user.organizationInfo,
-      avatarUrl: user.avatarUrl,
-      reputation: user.reputation,
-      createdAt: user.createdAt
-    };
-
     res.json({
       message: 'Role switched successfully',
-      user: userData
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        organizationInfo: user.organizationInfo,
+        avatarUrl: user.avatarUrl,
+        reputation: user.reputation,
+        createdAt: user.createdAt,
+      },
     });
-  } catch (error) {
-    console.error('❌ Role switch error:', error);
+  } catch (e) {
+    console.error('switchRole error:', e);
     res.status(500).json({ message: 'Server error switching role' });
+  }
+};
+
+/** -------- Email-only OTP endpoints (signup flow) -------- */
+
+/** POST /api/auth/otp/send   body: { tempToken } */
+export const sendOtp = async (req, res) => {
+  try {
+    const { tempToken } = req.body || {};
+    if (!tempToken) return res.status(400).json({ message: 'Bad request' });
+
+    let payload;
+    try { payload = jwt.verify(tempToken, process.env.JWT_SECRET); }
+    catch { return res.status(401).json({ message: 'Temp token invalid/expired' }); }
+
+    if (payload.kind !== 'signup_otp') {
+      return res.status(400).json({ message: 'Invalid OTP purpose' });
+    }
+
+    const user = await User.findById(payload.userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    const code = genCode();
+    user.loginOtp = {
+      channel: 'email',
+      codeHash: hash(code),
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+      attempts: 0,
+    };
+    await user.save();
+
+    // ✅ If SMTP creds missing, don't fail the flow in DEV
+    const canSendEmail = process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS;
+    if (canSendEmail) {
+      await transporter.sendMail({
+        from: process.env.MAIL_FROM || 'no-reply@example.com',
+        to: user.email,
+        subject: 'Verify your account',
+        text: `Your verification code is ${code}. It expires in 10 minutes.`,
+        html: `<p>Your verification code is <b>${code}</b>. It expires in 10 minutes.</p>`,
+      });
+    } else {
+      // DEV fallback: print to server log so you can copy-paste
+      console.log('[DEV][OTP]', user.email, 'code =', code);
+    }
+
+    return res.json({ ok: true, devHint: canSendEmail ? undefined : 'OTP logged to server console' });
+  } catch (e) {
+    console.error('sendOtp error:', e);
+    return res.status(500).json({ message: 'Failed to send OTP' });
+  }
+};
+
+
+/** POST /api/auth/otp/verify  body: { tempToken, code } */
+export const verifyOtp = async (req, res) => {
+  try {
+    const { tempToken, code } = req.body || {};
+    if (!tempToken || !code) return res.status(400).json({ message: 'Bad request' });
+
+    let payload;
+    try { payload = jwt.verify(tempToken, JWT_SECRET); }
+    catch { return res.status(401).json({ message: 'Temp token invalid/expired' }); }
+
+    if (payload.kind !== 'signup_otp') {
+      return res.status(400).json({ message: 'Invalid OTP purpose' });
+    }
+
+    const user = await User.findById(payload.userId);
+    if (!user?.loginOtp) return res.status(400).json({ message: 'No OTP pending' });
+
+    if (user.loginOtp.expiresAt < new Date()) {
+      user.loginOtp = null; await user.save();
+      return res.status(400).json({ message: 'Code expired' });
+    }
+    if (user.loginOtp.attempts >= 5) {
+      user.loginOtp = null; await user.save();
+      return res.status(429).json({ message: 'Too many attempts' });
+    }
+
+    const ok = user.loginOtp.codeHash === hash(code);
+    user.loginOtp.attempts += 1;
+    if (!ok) { await user.save(); return res.status(400).json({ message: 'Invalid code' }); }
+
+    // success
+    user.emailVerified = true;
+    user.loginOtp = null;
+    await user.save();
+
+    // Auto-login after verification
+    const tokens = issueTokens(user);
+    return res.json(tokens);
+  } catch (e) {
+    console.error('verifyOtp error:', e);
+    res.status(500).json({ message: 'Failed to verify OTP' });
   }
 };

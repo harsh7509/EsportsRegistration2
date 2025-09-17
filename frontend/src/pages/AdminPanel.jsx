@@ -107,6 +107,22 @@ const AdminPanel = () => {
     }
   };
 
+
+
+  // load
+  const [kycItems, setKycItems] = useState([]);
+  useEffect(() => {
+    adminAPI.listOrgKyc().then(res => setKycItems(res?.data?.items || []));
+  }, []);
+
+  // approve/reject
+  const act = async (id, action, notes) => {
+    await adminAPI.reviewOrgKyc(id, action, notes);
+    toast.success(`KYC ${action}d`);
+    const res = await adminAPI.listOrgKyc();
+    setKycItems(res?.data?.items || []);
+  };
+
   // ===== Users actions =====
   const handleUpdateUserRole = async (userId, newRole) => {
     try {
@@ -165,30 +181,30 @@ const AdminPanel = () => {
 
   // ===== Promotions actions =====
   const handleCreatePromotion = async (e) => {
-  e.preventDefault();
-  try {
-    const { scrimId, ...rest } = promoForm;
-    const payload = scrimId?.trim() ? { ...rest, scrimId: scrimId.trim() } : rest;
+    e.preventDefault();
+    try {
+      const { scrimId, ...rest } = promoForm;
+      const payload = scrimId?.trim() ? { ...rest, scrimId: scrimId.trim() } : rest;
 
-    await adminAPI.createPromotion(payload);
-    toast.success('Promotion created');
-    setShowCreatePromo(false);
-    setPromoForm({
-      title: '',
-      description: '',
-      imageUrl: '',
-      organizationId: '',
-      scrimId: '',
-      type: 'scrim',
-      priority: 1,
-      endDate: ''
-    });
-    fetchPromotions();
-  } catch (e) {
-    console.error('create promo error:', e);
-    toast.error(e?.response?.data?.message || 'Failed to create promotion');
-  }
-};
+      await adminAPI.createPromotion(payload);
+      toast.success('Promotion created');
+      setShowCreatePromo(false);
+      setPromoForm({
+        title: '',
+        description: '',
+        imageUrl: '',
+        organizationId: '',
+        scrimId: '',
+        type: 'scrim',
+        priority: 1,
+        endDate: ''
+      });
+      fetchPromotions();
+    } catch (e) {
+      console.error('create promo error:', e);
+      toast.error(e?.response?.data?.message || 'Failed to create promotion');
+    }
+  };
 
   const handleDeletePromotion = async (promoId) => {
     if (!window.confirm('Delete this promotion?')) return;
@@ -291,11 +307,10 @@ const AdminPanel = () => {
                 <button
                   key={id}
                   onClick={() => setActiveTab(id)}
-                  className={`py-2 px-1 border-b-2 font-medium text-sm flex items-center ${
-                    activeTab === id
-                      ? 'border-gaming-purple text-gaming-purple'
-                      : 'border-transparent text-gray-400 hover:text-gray-300'
-                  }`}
+                  className={`py-2 px-1 border-b-2 font-medium text-sm flex items-center ${activeTab === id
+                    ? 'border-gaming-purple text-gaming-purple'
+                    : 'border-transparent text-gray-400 hover:text-gray-300'
+                    }`}
                 >
                   <Icon className="h-4 w-4 mr-2" />
                   {label}
@@ -484,17 +499,17 @@ const AdminPanel = () => {
                       />
                     </div>
                     {promoForm.type === 'tournament' && (
-  <div>
-    <label className="block text-sm font-medium text-gray-300 mb-2">Tournament ID (optional)</label>
-    <input
-      type="text"
-      value={promoForm.tournamentId || ''}
-      onChange={(e) => setPromoForm({ ...promoForm, tournamentId: e.target.value })}
-      className="input w-full"
-      placeholder="Tournament MongoDB ID"
-    />
-  </div>
-)}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">Tournament ID (optional)</label>
+                        <input
+                          type="text"
+                          value={promoForm.tournamentId || ''}
+                          onChange={(e) => setPromoForm({ ...promoForm, tournamentId: e.target.value })}
+                          className="input w-full"
+                          placeholder="Tournament MongoDB ID"
+                        />
+                      </div>
+                    )}
 
                     <div>
                       <label className="block text-sm font-medium text-gray-300 mb-2">End Date (Optional)</label>
@@ -553,6 +568,25 @@ const AdminPanel = () => {
                 </button>
               )}
             </div>
+
+            // render
+            {kycItems.map(item => (
+              <div key={item._id} className="card p-3 space-y-2">
+                <div className="font-medium">{item.name} • {item.email}</div>
+                <div>Legal: {item.orgKyc?.legalName}</div>
+                <div>DOB: {item.orgKyc?.dob?.slice?.(0, 10)}</div>
+                <div>Aadhaar: {String(item.orgKyc?.aadhaarNumber || '').replace(/.(?=.{4})/g, '•')}</div>
+                <div className="flex gap-3">
+                  <a href={item.orgKyc?.aadhaarImageUrl} target="_blank" rel="noreferrer">Aadhaar Image</a>
+                  <a href={item.orgKyc?.selfieWithAadhaarUrl} target="_blank" rel="noreferrer">Selfie</a>
+                </div>
+                <div>Status: {item.orgKyc?.status}</div>
+                <div className="flex gap-2">
+                  <button className="btn-success" onClick={() => act(item._id, 'approve')}>Approve</button>
+                  <button className="btn-danger" onClick={() => act(item._id, 'reject')}>Reject</button>
+                </div>
+              </div>
+            ))}
 
             <div className="flex items-center gap-6 mb-6">
               <div className="relative">
@@ -692,13 +726,12 @@ const AdminPanel = () => {
                         </td>
                         <td className="py-3 px-4">
                           <span
-                            className={`px-2 py-1 rounded-full text-xs ${
-                              u.role === 'admin'
-                                ? 'bg-red-500/20 text-red-400'
-                                : u.role === 'organization'
+                            className={`px-2 py-1 rounded-full text-xs ${u.role === 'admin'
+                              ? 'bg-red-500/20 text-red-400'
+                              : u.role === 'organization'
                                 ? 'bg-blue-500/20 text-blue-400'
                                 : 'bg-green-500/20 text-green-400'
-                            }`}
+                              }`}
                           >
                             {u.role}
                           </span>

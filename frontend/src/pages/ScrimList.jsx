@@ -19,12 +19,13 @@ const ScrimList = () => {
     date: '',
     sort: 'rank',
     page: 1,
-    entryFee: '',
+    
   });
 
   // Client-only quick filters
   const [feeFilter, setFeeFilter] = useState('all');
   const [selectedDate, setSelectedDate] = useState('');
+  const [priceExact, setPriceExact] = useState(''); 
 
   const [totalPages, setTotalPages] = useState(1);
 
@@ -36,7 +37,7 @@ const ScrimList = () => {
   useEffect(() => {
     fetchScrims();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters.page, filters.game, filters.platform, filters.date, filters.sort, filters.entryFee, filters.q]);
+  }, [filters.page, filters.game, filters.platform,  filters.sort,  filters.q]);
 
   const fetchScrims = async () => {
     setLoading(true);
@@ -136,13 +137,21 @@ const ScrimList = () => {
         orgName.includes(q)
       );
     })
+    // ✅ NEW: typed exact price (takes priority if filled)
+  .filter((s) => {
+    const fee = Number(s.entryFee || 0);
+    if (priceExact !== '' && !Number.isNaN(Number(priceExact))) {
+      return fee === Number(priceExact);
+    }
+    return true;
+  })
     // Fee quick filter
     .filter((s) => {
       if (feeFilter === 'all') return true;
       const fee = s.entryFee || 0;
       if (feeFilter === 'free') return fee === 0;
-      if (feeFilter === '25') return fee === 25;
-      if (feeFilter === '50') return fee === 50;
+      if (feeFilter === '25') return fee <= 25;
+      if (feeFilter === '50') return fee <= 50;
       if (feeFilter === '60+') return fee >= 60;
       return true;
     })
@@ -237,19 +246,7 @@ const ScrimList = () => {
               </select>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                <Calendar className="inline h-4 w-4 mr-1" />
-                Date (backend)
-              </label>
-              <input
-                type="date"
-                className="input w-full"
-                value={filters.date}
-                onChange={(e) => handleFilterChange('date', e.target.value)}
-                min={today}
-              />
-            </div>
+           
 
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">Sort By</label>
@@ -265,20 +262,27 @@ const ScrimList = () => {
               </select>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Entry Fee (backend)</label>
-              <select
-                className="input w-full"
-                value={filters.entryFee}
-                onChange={(e) => handleFilterChange('entryFee', e.target.value)}
-              >
-                <option value="">All Scrims</option>
-                <option value="0">Free (₹0)</option>
-                <option value="25">₹25 Entry</option>
-                <option value="50">₹50 Entry</option>
-                <option value="60+">₹60+ Premium</option>
-              </select>
-            </div>
+           <div className="flex items-center gap-2 mt-4">
+  <label className="text-sm text-gray-300">Exact price (₹):</label>
+  <input
+    type="number"
+    min="0"
+    step="1"
+    className="input w-40"
+    value={priceExact}
+    onChange={(e) => setPriceExact(e.target.value)}
+    placeholder="e.g. 50"
+  />
+  {priceExact && (
+    <button
+      onClick={() => setPriceExact('')}
+      className="px-3 py-2 bg-gray-700 text-gray-200 rounded hover:bg-gray-600 text-sm"
+    >
+      Clear
+    </button>
+  )}
+</div>
+
           </div>
 
           {/* Client-only quick filters */}

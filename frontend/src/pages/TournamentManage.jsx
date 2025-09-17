@@ -2,7 +2,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { tournamentsAPI, uploadAPI } from '../services/api';
-import { Users, MessageSquare, Send, Upload, Plus, Edit3, Trash2, Scissors } from 'lucide-react';
+import { Users, MessageSquare, Send, Upload, Plus, Edit3, Trash2, Scissors, X, } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 
@@ -19,6 +19,10 @@ export default function TournamentManage() {
   const fileRef = useRef(null);
   const [editingMsgId, setEditingMsgId] = useState(null);
   const [editText, setEditText] = useState('');
+  const visibleMsgs = messages.filter(m => m && m.type !== 'deleted');
+
+
+
 
   // group ops
   const [renameOpen, setRenameOpen] = useState(false);
@@ -28,13 +32,30 @@ export default function TournamentManage() {
   // tournament edit/delete
   const [tEditOpen, setTEditOpen] = useState(false);
   const [tForm, setTForm] = useState({ title: '', description: '', price: 0, capacity: 0 });
+  const [showTeamModal, setShowTeamModal] = useState(false);
+  const [teamModalData, setTeamModalData] = useState(null);
 
   // Manual group ui
   const [manualOpen, setManualOpen] = useState(false);
   const [manualName, setManualName] = useState('');
   const [selectedPlayers, setSelectedPlayers] = useState({}); // userId => true
 
+  // NEW: participants filter
+  // 'all' | 'group' | 'ungrouped'
+  const [listFilter, setListFilter] = useState('all');
+
   // --- helpers ---
+
+  // refresh current group's messages without toggling selection
+  const refreshMessages = async () => {
+    if (!selectedGroup) return;
+    try {
+      const res = await tournamentsAPI.getGroupRoomMessages(id, selectedGroup._id);
+      setMessages(arr(res?.data?.room?.messages));
+    } catch (e) {
+      console.error('refreshMessages error:', e);
+    }
+  };
   const arr = (v) => (Array.isArray(v) ? v : []);
   const toId = (x) => (typeof x === 'object' && x?._id ? x._id : x);
 
@@ -48,7 +69,7 @@ export default function TournamentManage() {
         tournamentsAPI.get(id), // GET /api/tournaments/:id → { tournament }
       ]);
 
-      //    p = axios response OR plain data – दोनों केस हैंडल
+      // normalize participants
       const plist = Array.isArray(p?.data?.participants)
         ? p.data.participants
         : Array.isArray(p?.participants)
@@ -56,6 +77,8 @@ export default function TournamentManage() {
           : Array.isArray(p?.data)
             ? p.data
             : [];
+
+      // normalize groups
       const glist = Array.isArray(g?.data?.groups)
         ? g.data.groups
         : Array.isArray(g?.groups)
@@ -77,8 +100,9 @@ export default function TournamentManage() {
 
       // keep current selection valid
       if (selectedGroup) {
-        const again = glist.find((gg) => gg._id === selectedGroup._id);
+        const again = glist.find((gg) => String(gg._id) === String(selectedGroup._id));
         setSelectedGroup(again || null);
+        if (!again) setListFilter('all'); // if selected group disappeared, show all
       }
     } catch (e) {
       console.error('load error:', e);
@@ -121,12 +145,33 @@ export default function TournamentManage() {
     }
   };
 
-  // ----- open a group (also ensures room exists) -----
+
+  const removeFromTournament = async (uid) => {
+    if (!uid) return;
+    if (!window.confirm('Remove this participant from the tournament?')) return;
+    try {
+      await tournamentsAPI.removeParticipant(id, uid);
+      await load();
+      toast.success('Participant removed');
+    } catch (e) {
+      toast.error(e?.response?.data?.message || 'Failed to remove participant');
+    }
+  };
+
+  // ----- open a group (toggle to ALL if clicked again) -----
   const openGroup = async (g) => {
     try {
-      // keep the selected group by id (not by stale object ref)
+      if (selectedGroup && String(selectedGroup._id) === String(g._id)) {
+        // deselect and show all
+        setSelectedGroup(null);
+        setMessages([]);
+        setListFilter('all');
+        return;
+      }
+
       const picked = groups.find((x) => String(x._id) === String(g._id)) || g;
       setSelectedGroup(picked);
+      setListFilter('group');
 
       const res = await tournamentsAPI.getGroupRoomMessages(id, picked._id); // ensures room
       setMessages(arr(res?.data?.room?.messages));
@@ -159,7 +204,7 @@ export default function TournamentManage() {
         type: 'text',
       });
       setText('');
-      await openGroup(selectedGroup);
+      await refreshMessages();
     } catch (e) {
       console.error('sendText error:', e);
       toast.error('Failed to send');
@@ -179,7 +224,7 @@ export default function TournamentManage() {
         content: `Image: ${file.name}`,
         imageUrl: url,
       });
-      await openGroup(selectedGroup);
+      await refreshMessages();
     } catch (err) {
       console.error('sendImage error:', err);
       toast.error('Image send failed');
@@ -188,7 +233,7 @@ export default function TournamentManage() {
     }
   };
 
-  // ----- messages: start edit -----
+  // ----- messages: edit/delete -----
   const startEditMsg = (m) => {
     setEditingMsgId(m._id);
     setEditText(m.content || '');
@@ -202,7 +247,7 @@ export default function TournamentManage() {
     try {
       await tournamentsAPI.editGroupRoomMessage(id, selectedGroup._id, editingMsgId, { content: editText });
       cancelEditMsg();
-      await openGroup(selectedGroup);
+      await refreshMessages();
       toast.success('Message edited');
     } catch (e) {
       toast.error(e?.response?.data?.message || 'Edit failed');
@@ -212,7 +257,7 @@ export default function TournamentManage() {
     if (!selectedGroup || !mid) return;
     try {
       await tournamentsAPI.deleteGroupRoomMessage(id, selectedGroup._id, mid);
-      await openGroup(selectedGroup);
+      await refreshMessages();
       toast.success('Message deleted');
     } catch (e) {
       toast.error(e?.response?.data?.message || 'Delete failed');
@@ -246,7 +291,7 @@ export default function TournamentManage() {
       for (const uid of memberIds) {
         await tournamentsAPI.moveGroupMember(id, {
           userId: uid,
-          fromGroupId: selectedGroup?._id || '', // अगर कोई group खुला है तो वही from; नहीं तो client-side remove न करो
+          fromGroupId: selectedGroup?._id || '',
           toGroupId: moveToGroupId,
         });
       }
@@ -297,33 +342,20 @@ export default function TournamentManage() {
     }
   };
 
-  const deleteRoom = async () => {
-  if (!selectedGroup) return;
-  if (!window.confirm(`Delete room for "${selectedGroup.name}"? Messages will be lost.`)) return;
-  try {
-    await tournamentsAPI.deleteGroupRoom(id, selectedGroup._id);
-    await openGroup(selectedGroup); // will auto-create next time you Ensure Room / open messages
-    toast.success('Room deleted');
-  } catch (e) {
-    toast.error(e?.response?.data?.message || 'Failed to delete room');
-  }
-};
-
-
+  // ----- room deletion -----
   const deleteRoomNow = async () => {
     if (!selectedGroup) return;
     if (!window.confirm(`Delete room for "${selectedGroup.name}"? Messages will be removed.`)) return;
     try {
       await tournamentsAPI.deleteGroupRoom(id, selectedGroup._id);
-      await openGroup(selectedGroup);     // reload room/messages (will be empty/auto-create on next ensure)
+      // reload room/messages (will be empty/auto-create on next ensure)
+      setMessages([]);
       toast.success('Room deleted');
     } catch (e) {
       console.error('deleteRoomNow error:', e);
       toast.error(e?.response?.data?.message || 'Failed to delete room');
     }
   };
-
-
 
   // ----- manual group creation -----
   const toggleSel = (u) =>
@@ -353,6 +385,23 @@ export default function TournamentManage() {
     }
   };
 
+  // Build a set of grouped userIds once for filtering
+  const groupedSet = new Set(
+    groups.flatMap(g => (g.memberIds || []).map(m => String(toId(m))))
+  );
+
+  // derive visible participant list
+  const visibleParticipants = (() => {
+    if (listFilter === 'ungrouped') {
+      return participants.filter(p => !groupedSet.has(String(toId(p.userId))));
+    }
+    if (listFilter === 'group' && selectedGroup) {
+      const selSet = new Set((selectedGroup.memberIds || []).map(u => String(toId(u))));
+      return participants.filter(p => selSet.has(String(toId(p.userId))));
+    }
+    return participants;
+  })();
+
   return (
     <div className="max-w-6xl mx-auto p-6">
       <div className="flex items-center justify-between mb-4">
@@ -362,6 +411,7 @@ export default function TournamentManage() {
           <button className="btn-danger" onClick={deleteTournament}>Delete</button>
         </div>
       </div>
+
       <div className="grid lg:grid-cols-3 gap-6">
         {/* left: participants */}
         <div className="card lg:col-span-1">
@@ -371,6 +421,16 @@ export default function TournamentManage() {
               Participants
             </h2>
             <div className="flex gap-2">
+              <select
+                className="input"
+                value={listFilter}
+                onChange={(e) => setListFilter(e.target.value)}
+                title="Filter participants"
+              >
+                <option value="all">All teams</option>
+                <option value="group" disabled={!selectedGroup}>Selected group</option>
+                <option value="ungrouped">Ungrouped only</option>
+              </select>
               <button className="btn-secondary" onClick={() => makeAutoGroups(4)}>
                 Auto 4
               </button>
@@ -381,11 +441,17 @@ export default function TournamentManage() {
           </div>
 
           <div className="space-y-2 max-h-80 overflow-auto">
-            {participants.length ? (
-              participants.map((p) => {
+            {visibleParticipants.length ? (
+              visibleParticipants.map((p) => {
                 const uId = toId(p.userId);
                 const uObj = typeof p.userId === 'object' ? p.userId : null;
                 const isInSelectedGroup = !!(selectedGroup?.memberIds || []).find(m => String(toId(m)) === String(uId));
+                const displayName =
+                  (p.teamName && p.teamName.trim()) ||
+                  (p.team && p.team.name) ||
+                  p.ign ||
+                  (uObj?.name) ||
+                  'Player';
                 return (
                   <label
                     key={uId}
@@ -411,8 +477,70 @@ export default function TournamentManage() {
                       </div>
                     )}
                     <div className="text-sm flex-1">
-                      {uObj?.name || p.ign || 'Player'}
+                      <div className="text-sm flex-1">{displayName}</div>
+                      {Array.isArray(p.players) && p.players.length > 0 && (
+                        <div className="text-xs text-gray-400">
+                          {p.players
+                            .filter(pp => pp.ignName && pp.ignId)
+                            .map(pp => `${pp.ignName} (${pp.ignId})`)
+                            .join(', ')}
+                        </div>
+                      )}
                     </div>
+                    <button
+                      type="button"
+                      className="text-xs underline text-gaming-cyan hover:opacity-80 mr-2"
+                      onClick={(e) => { e.preventDefault(); setTeamModalData(p); setShowTeamModal(true); }}
+                    >
+                      Details
+                    </button>
+                   {showTeamModal && teamModalData && (
+  <div className="fixed inset-0 bg-black/60 z-50 grid place-items-center p-4">
+    <div className="bg-gray-800 rounded-lg p-4 w-full max-w-md">
+      <div className="flex items-center justify-between mb-2">
+        <div className="font-semibold">Team Details</div>
+        <button className="text-gray-400 hover:text-white" onClick={() => setShowTeamModal(false)}>
+          <X className="h-5 w-5" />
+        </button>
+      </div>
+
+      <div className="space-y-2 text-sm">
+        <div>
+          <span className="text-gray-400">Team:</span> {teamModalData.teamName || '—'}
+        </div>
+        <div>
+          <span className="text-gray-400">Contact:</span> {teamModalData.realName || '—'}
+          {teamModalData.phone ? ` • ${teamModalData.phone}` : ''}
+        </div>
+
+        <div className="mt-2">
+          <div className="text-gray-400 mb-1">Players:</div>
+          <div className="space-y-1">
+            {(teamModalData.players || []).map((pp, idx) => (
+              <div key={pp._id || pp.slot || idx} className="flex justify-between">
+                <div>#{pp.slot ?? (idx + 1)}</div>
+                <div className="flex-1 text-right">
+                  {pp.ignName || '—'}{pp.ignId ? ` (${pp.ignId})` : ''}
+                </div>
+              </div>
+            ))}
+            {(!teamModalData.players || teamModalData.players.length === 0) && (
+              <div className="text-gray-400">No player list</div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3 flex justify-end">
+        <button className="btn-primary" onClick={() => setShowTeamModal(false)}>Close</button>
+      </div>
+    </div>
+  </div>
+)}
+
+
+
+
                     {selectedGroup && isInSelectedGroup && (
                       <button
                         type="button"
@@ -423,6 +551,15 @@ export default function TournamentManage() {
                         <Scissors className="h-4 w-4" />
                       </button>
                     )}
+                    {/* Organizer: remove completely from tournament */}
+                    <button
+                      type="button"
+                      className="text-red-400 hover:text-red-300"
+                      title="Remove from tournament"
+                      onClick={(e) => { e.preventDefault(); removeFromTournament(uId); }}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
                   </label>
                 );
               })
@@ -483,8 +620,8 @@ export default function TournamentManage() {
                   key={g._id}
                   onClick={() => openGroup(g)}
                   className={`w-full text-left p-3 rounded border ${selectedGroup && String(selectedGroup._id) === String(g._id)
-                      ? 'border-gaming-purple'
-                      : 'border-transparent bg-gray-700 hover:bg-gray-600'
+                    ? 'border-gaming-purple'
+                    : 'border-transparent bg-gray-700 hover:bg-gray-600'
                     }`}
                 >
                   <div className="flex items-center justify-between">
@@ -506,27 +643,28 @@ export default function TournamentManage() {
                       <Edit3 className="h-4 w-4" />
                     </span>
                     <button
-  type="button"
-  className="text-red-400 hover:text-red-300 ml-2"
-  title="Delete group"
-  onClick={async (e) => {
-    e.stopPropagation();
-    if (!window.confirm('Delete this group? Players will be ungrouped.')) return;
-    try {
-      await tournamentsAPI.deleteGroup(id, g._id);
-      if (selectedGroup && String(selectedGroup._id) === String(g._id)) {
-        setSelectedGroup(null);
-        setMessages([]);
-      }
-      await load();
-      toast.success('Group deleted');
-    } catch (err) {
-      toast.error(err?.response?.data?.message || 'Delete failed');
-    }
-  }}
->
-  <Trash2 className="h-4 w-4" />
-</button>
+                      type="button"
+                      className="text-red-400 hover:text-red-300 ml-2"
+                      title="Delete group"
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        if (!window.confirm('Delete this group? Players will be ungrouped.')) return;
+                        try {
+                          await tournamentsAPI.deleteGroup(id, g._id);
+                          if (selectedGroup && String(selectedGroup._id) === String(g._id)) {
+                            setSelectedGroup(null);
+                            setMessages([]);
+                            setListFilter('all');
+                          }
+                          await load();
+                          toast.success('Group deleted');
+                        } catch (err) {
+                          toast.error(err?.response?.data?.message || 'Delete failed');
+                        }
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
                   </div>
 
                   <div className="text-xs text-gray-400">
@@ -576,9 +714,9 @@ export default function TournamentManage() {
           </div>
 
           <div className="bg-gray-700 rounded p-3 h-72 overflow-auto space-y-2">
-            {messages.length ? (
-              messages.map((m, i) => (
-                <div key={i} className="p-2 rounded bg-gray-600">
+            {visibleMsgs.length ? (
+  visibleMsgs.map((m, i) => (
+    <div key={m._id || i} className="p-2 rounded bg-gray-600">
                   <div className="text-xs text-gray-300">
                     {m.timestamp ? new Date(m.timestamp).toLocaleString() : ''}
                   </div>
@@ -633,6 +771,7 @@ export default function TournamentManage() {
             </button>
           </form>
         </div>
+
         {/* Rename Group Modal */}
         {renameOpen && (
           <div className="fixed inset-0 bg-black/60 z-50 grid place-items-center p-4">
@@ -670,14 +809,5 @@ export default function TournamentManage() {
 
       </div>
     </div>
-
-
   );
 }
-
-
-
-
-
-
-
