@@ -21,7 +21,7 @@ const app = express();
 // Security middleware
 app.use(helmet());
 app.use(cors({
-  origin: "https://arenapulse-orcin.vercel.app",
+  origin: "https://arenapulse-etomwtpu3-harsh-kumars-projects-9bda6a19.vercel.app/",
   credentials: true
 }));
 
