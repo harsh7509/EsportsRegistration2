@@ -1,6 +1,6 @@
 // backend/src/routes/upload.js
 import express from 'express';
-import upload from '../utils/multerConfig.js';
+import upload from '../utils/multerconfig.js';
 import { uploadImage } from '../controllers/uploadController.js';
 import { updateProfileImage } from '../controllers/profileController.js';
 import { authenticate } from '../middlewares/auth.js';

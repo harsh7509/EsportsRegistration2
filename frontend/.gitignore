@@ -1,2 +1,42 @@
-node_modules
+# Node.js dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Logs
+logs
+*.log
+*.pid
+*.seed
+*.pid.lock
+
+# Build outputs
+dist/
+build/
+.cache/
+.next/
+out/
+coverage/
+
+# Runtime data
+tmp/
+temp/
+*.tmp
+*.swp
+*.swo
+
+# Env files
 .env
+.env.local
+.env.*.local
+
+# VSCode / IDE
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS generated files
+.DS_Store
+Thumbs.db
