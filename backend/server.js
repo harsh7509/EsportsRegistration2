@@ -76,7 +76,7 @@ const server = http.createServer(app);
 const io = new SocketIOServer(server, {
   path: '/socket.io',
   cors: {
-    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+    origin: "https://arenapulse-orcin.vercel.app",
     methods: ['GET', 'POST'],
     credentials: true,
   },
