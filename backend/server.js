@@ -43,7 +43,8 @@ const __dirname = path.dirname(__filename);
 app.use(
   cors({
     origin: "https://arenapulse-orcin.vercel.app",
-    credentials: true,
+    methods: ["GET","POST","PUT","PATCH","DELETE","OPTIONS"],
+  credentials: true
   })
 );
 app.use(express.json());
