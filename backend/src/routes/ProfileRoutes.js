@@ -2,7 +2,7 @@ import express from 'express';
 
 // ✅ Use the actual filename/casing for your multer config
 //    (make sure the file exists at: backend/src/utils/multerConfig.js)
-import upload from '../utils/multerconfig.js';
+import upload from '../utils/multer.config.js';
 
 import { updateProfileImage, getMyBookings } from '../controllers/profileController.js';
 import { authenticate } from '../middlewares/auth.js';
