@@ -7,16 +7,16 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://localhost:4000',
+        target: 'https://esportsregistration2.onrender.com',
         changeOrigin: true,
       },
       '/socket.io': {
-        target: 'http://localhost:4000',
+        target: 'https://esportsregistration2.onrender.com',
         ws: true,
         changeOrigin: true,
       },
       '/uploads': {
-        target: 'http://localhost:4000',
+        target: 'https://esportsregistration2.onrender.com',
         changeOrigin: true,
       },
     },
