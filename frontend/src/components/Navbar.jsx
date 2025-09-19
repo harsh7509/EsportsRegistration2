@@ -65,7 +65,7 @@ const Navbar = () => {
               <Gamepad2 className="relative h-8 w-8 text-gaming-purple" />
             </div>
             <span className="text-xl font-bold bg-gradient-to-r from-white via-gaming-purple to-gaming-cyan bg-clip-text text-transparent">
-              EsportsPro
+              Arena Pulse
             </span>
           </Link>
 
