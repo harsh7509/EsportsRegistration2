@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = '/'; // ⬅ keep everything on the same base (works with your Vite proxy/dev server)
+
 const ORIGIN =
   import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, "") || "http://localhost:4000";
 
