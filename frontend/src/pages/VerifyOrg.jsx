@@ -1,10 +1,28 @@
+// frontend/src/pages/VerifyOrg.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ShieldCheck, Badge, Camera, UploadCloud, CheckCircle2, XCircle, ArrowLeft, Info } from "lucide-react";
+import {
+  ShieldCheck,
+  Badge,
+  Camera,
+  UploadCloud,
+  CheckCircle2,
+  XCircle,
+  ArrowLeft,
+  Info,
+  Loader2,
+} from "lucide-react";
 import toast from "react-hot-toast";
 import { organizationsAPI } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 
+/**
+ * VerifyOrg — polished UI
+ * - Progress meter & step chips
+ * - Inline Aadhaar formatting/validation
+ * - Drag & drop image upload with type/size validation
+ * - Sticky tips on desktop, compact on mobile
+ */
 export default function VerifyOrg() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -23,14 +41,19 @@ export default function VerifyOrg() {
   const [selfieImage, setSelfieImage] = useState(null);
   const [consent, setConsent] = useState(false);
 
-  const aadhaarPreview = useObjectUrl(aadhaarImage);
-  const selfiePreview  = useObjectUrl(selfieImage);
+  // local validation state
+  const [errors, setErrors] = useState({});
 
-  // Prefill email from user once on mount
+  // previews
+  const aadhaarPreview = useObjectUrl(aadhaarImage);
+  const selfiePreview = useObjectUrl(selfieImage);
+
+  // Prefill email once
   useEffect(() => {
     if (user?.email) setEmail(user.email);
   }, [user]);
 
+  // Load existing KYC status
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -41,30 +64,70 @@ export default function VerifyOrg() {
         setVerified(!!res?.data?.verified);
         setStatus(k?.status || "unsubmitted");
       } catch {
-        // first time user – ignore
         setStatus("unsubmitted");
       } finally {
         if (mounted) setLoading(false);
       }
     })();
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, []);
 
+  // Derived
+  const aadhaarDigits = aadhaar.replace(/\D/g, "").slice(0, 12);
+  const aadhaarValid = /^\d{12}$/.test(aadhaarDigits);
+  const aadhaarPretty = aadhaarDigits.replace(/(\d{4})(\d{0,4})(\d{0,4})/, (_, a, b, c) =>
+    [a, b, c].filter(Boolean).join(" ")
+  );
+
+  const stepCount = useMemo(() => {
+    let filled = 0;
+    if (legalName.trim()) filled++;
+    if (email.trim()) filled++;
+    if (dob) filled++;
+    if (aadhaarValid) filled++;
+    if (aadhaarImage) filled++;
+    if (selfieImage) filled++;
+    if (consent) filled++;
+    return filled;
+  }, [legalName, email, dob, aadhaarValid, aadhaarImage, selfieImage, consent]);
+
   const canSubmit = useMemo(() => {
-    const all = legalName && email && dob && aadhaar && aadhaarImage && selfieImage && consent;
+    const all =
+      legalName.trim() &&
+      email.trim() &&
+      dob &&
+      aadhaarValid &&
+      aadhaarImage &&
+      selfieImage &&
+      consent;
     return Boolean(all) && status !== "pending" && status !== "approved";
-  }, [legalName, email, dob, aadhaar, aadhaarImage, selfieImage, consent, status]);
+  }, [legalName, email, dob, aadhaarValid, aadhaarImage, selfieImage, consent, status]);
+
+  const validate = () => {
+    const next = {};
+    if (!legalName.trim()) next.legalName = "Required";
+    if (!email.trim()) next.email = "Required";
+    if (!dob) next.dob = "Required";
+    if (!aadhaarValid) next.aadhaar = "Must be 12 digits";
+    if (!aadhaarImage) next.aadhaarImage = "Required";
+    if (!selfieImage) next.selfieImage = "Required";
+    if (!consent) next.consent = "Consent is required";
+    setErrors(next);
+    return Object.keys(next).length === 0;
+  };
 
   const onSubmit = async (e) => {
     e.preventDefault();
-    if (!canSubmit) return;
+    if (!validate()) return;
     setSubmitting(true);
     try {
       const fd = new FormData();
       fd.append("legalName", legalName.trim());
       fd.append("email", email.trim());
       fd.append("dob", dob);
-      fd.append("aadhaarNumber", aadhaar.trim());
+      fd.append("aadhaarNumber", aadhaarDigits);
       if (aadhaarImage) fd.append("aadhaarImage", aadhaarImage);
       if (selfieImage) fd.append("selfieImage", selfieImage);
 
@@ -81,109 +144,222 @@ export default function VerifyOrg() {
   if (loading) {
     return (
       <Page>
-        <div className="flex items-center justify-center py-24 text-gray-400">Loading…</div>
+        <div className="flex items-center justify-center py-24 text-gray-400">
+          <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+          Loading…
+        </div>
       </Page>
     );
   }
+
+  const progress = Math.round((stepCount / 7) * 100);
 
   return (
     <Page>
       {/* Header */}
       <div className="flex items-center gap-3 mb-6">
-        <button onClick={() => navigate(-1)} className="p-2 rounded-lg bg-gray-800 hover:bg-gray-700 border border-gray-700">
+        <button
+          onClick={() => navigate(-1)}
+          className="p-2 rounded-lg bg-gray-800/80 hover:bg-gray-700 border border-gray-700"
+          title="Back"
+        >
           <ArrowLeft className="w-5 h-5" />
         </button>
         <div>
           <h1 className="text-2xl md:text-3xl font-bold">Verify your organization</h1>
-          <p className="text-gray-400">Submit KYC to get a verified badge and unlock organizer tools.</p>
+          <p className="text-gray-400">
+            Submit KYC to get a verified badge and unlock organizer tools.
+          </p>
         </div>
       </div>
 
       {/* Status strip */}
       <StatusStrip status={status} verified={verified} />
 
+      {/* Progress */}
+      <div className="mb-6">
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-sm text-gray-400">Completion</div>
+          <div className="text-sm text-gray-300">{progress}%</div>
+        </div>
+        <div className="h-2 rounded-full bg-gray-800 overflow-hidden">
+          <div
+            className="h-full bg-gradient-to-r from-gaming-purple to-gaming-cyan transition-[width] duration-300"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <StepChip done={!!legalName}>Owner name</StepChip>
+          <StepChip done={!!email}>Email</StepChip>
+          <StepChip done={!!dob}>DOB</StepChip>
+          <StepChip done={aadhaarValid}>Aadhaar</StepChip>
+          <StepChip done={!!aadhaarImage}>Aadhaar photo</StepChip>
+          <StepChip done={!!selfieImage}>Selfie</StepChip>
+          <StepChip done={!!consent}>Consent</StepChip>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left column: form */}
         <div className="lg:col-span-2">
           <Card>
-            <form onSubmit={onSubmit} className="space-y-5">
-              <SectionHeader icon={<ShieldCheck className="w-5 h-5" />}>Organization owner details</SectionHeader>
+            <form onSubmit={onSubmit} className="space-y-6">
+              <SectionHeader icon={<ShieldCheck className="w-5 h-5" />}>
+                Organization owner details
+              </SectionHeader>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <TextInput label="Legal name" placeholder="Full name as per ID" value={legalName} onChange={setLegalName} required />
-                <TextInput label="Email" type="email" placeholder="owner@org.com" value={email} onChange={setEmail} required />
-                <TextInput label="Date of birth" type="date" value={dob} onChange={setDob} required />
+                <TextInput
+                  label="Legal name"
+                  placeholder="Full name as per ID"
+                  value={legalName}
+                  onChange={(v) => {
+                    setLegalName(v);
+                    setErrors((e) => ({ ...e, legalName: undefined }));
+                  }}
+                  required
+                  error={errors.legalName}
+                />
+                <TextInput
+                  label="Email"
+                  type="email"
+                  placeholder="owner@org.com"
+                  value={email}
+                  onChange={(v) => {
+                    setEmail(v);
+                    setErrors((e) => ({ ...e, email: undefined }));
+                  }}
+                  required
+                  error={errors.email}
+                />
+                <TextInput
+                  label="Date of birth"
+                  type="date"
+                  value={dob}
+                  onChange={(v) => {
+                    setDob(v);
+                    setErrors((e) => ({ ...e, dob: undefined }));
+                  }}
+                  required
+                  error={errors.dob}
+                />
                 <TextInput
                   label="Aadhaar number"
                   placeholder="XXXX XXXX XXXX"
-                  value={aadhaar}
-                  onChange={setAadhaar}
+                  value={aadhaarPretty}
+                  onChange={(v) => {
+                    // accept digits only; format to pretty view
+                    const digits = v.replace(/\D/g, "").slice(0, 12);
+                    setAadhaar(digits);
+                    setErrors((e) => ({ ...e, aadhaar: undefined }));
+                  }}
                   inputMode="numeric"
-                  maxLength={12}
-                  hint="We store this securely. Only admins can view."
+                  maxLength={14} // includes spaces in pretty string
+                  hint={aadhaarValid ? "Looks good." : "12 digits required."}
+                  status={aadhaarValid ? "ok" : "warn"}
                   required
+                  error={errors.aadhaar}
                 />
               </div>
 
               <Divider />
 
-              <SectionHeader icon={<Badge className="w-5 h-5" />}>Identity images</SectionHeader>
+              <SectionHeader icon={<Badge className="w-5 h-5" />}>
+                Identity images
+              </SectionHeader>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <DropZone
                   label="Aadhaar card photo"
                   file={aadhaarImage}
                   preview={aadhaarPreview}
-                  onFile={setAadhaarImage}
+                  onFile={(f) => {
+                    const checked = validateImageFile(f);
+                    if (checked) {
+                      setAadhaarImage(checked);
+                      setErrors((e) => ({ ...e, aadhaarImage: undefined }));
+                    }
+                  }}
                   tips={[
                     "Clear photo of the front side",
                     "Ensure all details are readable",
                   ]}
+                  error={errors.aadhaarImage}
                 />
                 <DropZone
                   label="Selfie holding Aadhaar"
                   file={selfieImage}
                   preview={selfiePreview}
-                  onFile={setSelfieImage}
+                  onFile={(f) => {
+                    const checked = validateImageFile(f);
+                    if (checked) {
+                      setSelfieImage(checked);
+                      setErrors((e) => ({ ...e, selfieImage: undefined }));
+                    }
+                  }}
                   tips={[
                     "Your face and Aadhaar must be visible",
                     "Avoid glare and blur",
                   ]}
+                  error={errors.selfieImage}
                 />
               </div>
 
-              <div className="flex items-start gap-3 bg-gray-800/60 border border-gray-700 rounded-xl p-3">
+              <div className="flex items-start gap-3 bg-gray-800/60 border border-gray-800/80 rounded-xl p-3">
                 <Info className="w-5 h-5 text-blue-300 mt-0.5" />
                 <p className="text-sm text-gray-300">
-                  Your data is used only for verification by admins and isn’t shared publicly. Images are kept in a restricted folder.
+                  Your data is used only for verification by admins and isn’t shared publicly.
+                  Images are kept in a restricted folder.
                 </p>
               </div>
 
-              <div className="flex items-center gap-2">
+              <label className="flex items-start gap-2">
                 <input
                   id="consent"
                   type="checkbox"
-                  className="accent-gaming-purple"
+                  className="mt-1 accent-gaming-purple"
                   checked={consent}
-                  onChange={(e)=>setConsent(e.target.checked)}
+                  onChange={(e) => {
+                    setConsent(e.target.checked);
+                    setErrors((er) => ({ ...er, consent: undefined }));
+                  }}
                 />
-                <label htmlFor="consent" className="text-sm text-gray-300">
+                <span className="text-sm text-gray-300">
                   I confirm the above details are correct and I consent to verification.
-                </label>
-              </div>
+                  {errors.consent && (
+                    <span className="block text-xs text-red-400 mt-1">{errors.consent}</span>
+                  )}
+                </span>
+              </label>
 
-              <div className="flex justify-end gap-3 pt-2">
-                <button type="button" onClick={() => navigate(-1)} className="btn-secondary">Cancel</button>
-                <button type="submit" disabled={!canSubmit || submitting} className="btn-primary">
-                  {submitting ? "Submitting…" : "Submit for review"}
+              <div className="flex flex-col sm:flex-row justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => navigate(-1)}
+                  className="btn-secondary"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!canSubmit || submitting}
+                  className="btn-primary inline-flex items-center justify-center"
+                >
+                  {submitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Submitting…
+                    </>
+                  ) : (
+                    "Submit for review"
+                  )}
                 </button>
               </div>
             </form>
           </Card>
         </div>
 
-        {/* Right column: tips & what happens next */}
-        <div className="space-y-6">
+        {/* Right column: sticky tips */}
+        <div className="space-y-6 lg:sticky lg:top-6 h-fit">
           <Card>
             <SectionHeader>Why verify?</SectionHeader>
             <ul className="list-disc pl-5 space-y-2 text-gray-300 text-sm">
@@ -210,7 +386,7 @@ export default function VerifyOrg() {
 
 function Page({ children }) {
   return (
-    <div className="min-h-[calc(100vh-4rem)] bg-gaming-dark text-white">
+    <div className="min-h-[calc(100vh-4rem)] bg-gradient-to-b from-black via-gaming-dark to-[#0c0c14] text-white">
       <div className="max-w-6xl mx-auto px-4 py-8">{children}</div>
     </div>
   );
@@ -218,7 +394,9 @@ function Page({ children }) {
 
 function Card({ children }) {
   return (
-    <div className="bg-gray-900/80 border border-gray-800 rounded-2xl shadow-xl p-5">{children}</div>
+    <div className="bg-gray-900/70 backdrop-blur-sm border border-gray-800 rounded-2xl shadow-xl p-5">
+      {children}
+    </div>
   );
 }
 
@@ -232,31 +410,76 @@ function SectionHeader({ children, icon }) {
 }
 
 function Divider() {
-  return <div className="border-t border-gray-800 my-4"/>;
+  return <div className="border-t border-gray-800 my-4" />;
 }
 
-function TextInput({ label, hint, value, onChange, type = "text", required, placeholder, inputMode, maxLength }) {
+function StepChip({ children, done }) {
+  return (
+    <span
+      className={[
+        "px-2.5 py-0.5 rounded-full text-xs font-medium border",
+        done
+          ? "bg-emerald-500/15 text-emerald-300 border-emerald-700/40"
+          : "bg-gray-800/70 text-gray-300 border-gray-700",
+      ].join(" ")}
+    >
+      {children}
+    </span>
+  );
+}
+
+function TextInput({
+  label,
+  hint,
+  value,
+  onChange,
+  type = "text",
+  required,
+  placeholder,
+  inputMode,
+  maxLength,
+  status, // "ok" | "warn"
+  error,
+}) {
+  const ring =
+    error
+      ? "ring-1 ring-red-500/40"
+      : status === "ok"
+      ? "ring-1 ring-emerald-500/30"
+      : "";
+
   return (
     <div>
       <label className="block text-sm font-medium text-gray-300 mb-1">
-        {label}{required && <span className="text-red-400"> *</span>}
+        {label}
+        {required && <span className="text-red-400"> *</span>}
       </label>
       <input
-        className="input w-full"
+        className={`input w-full ${ring}`}
         value={value}
-        onChange={(e)=>onChange(e.target.value)}
+        onChange={(e) => onChange(e.target.value)}
         type={type}
         placeholder={placeholder}
         inputMode={inputMode}
         maxLength={maxLength}
         required={required}
       />
-      {hint && <p className="text-xs text-gray-400 mt-1">{hint}</p>}
+      {error ? (
+        <p className="text-xs text-red-400 mt-1">{error}</p>
+      ) : hint ? (
+        <p
+          className={`text-xs mt-1 ${
+            status === "ok" ? "text-emerald-300" : "text-gray-400"
+          }`}
+        >
+          {hint}
+        </p>
+      ) : null}
     </div>
   );
 }
 
-function DropZone({ label, file, preview, onFile, tips = [] }) {
+function DropZone({ label, file, preview, onFile, tips = [], error }) {
   const inputRef = useRef(null);
   const [dragOver, setDragOver] = useState(false);
 
@@ -273,36 +496,55 @@ function DropZone({ label, file, preview, onFile, tips = [] }) {
         {label} <span className="text-red-400">*</span>
       </label>
       <div
-        onDragOver={(e)=>{ e.preventDefault(); setDragOver(true); }}
-        onDragLeave={()=>setDragOver(false)}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragOver(true);
+        }}
+        onDragLeave={() => setDragOver(false)}
         onDrop={onDrop}
         className={[
           "rounded-2xl border-2 border-dashed p-4 transition-colors cursor-pointer",
-          dragOver ? "border-gaming-purple bg-gaming-purple/10" : "border-gray-700 hover:border-gray-600"
+          dragOver
+            ? "border-gaming-purple bg-gaming-purple/10"
+            : "border-gray-700 hover:border-gray-600",
+          error ? "border-red-500/60" : "",
         ].join(" ")}
-        onClick={()=> inputRef.current?.click()}
+        onClick={() => inputRef.current?.click()}
         title="Click or drag-and-drop"
       >
         {!file ? (
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-lg bg-gray-800 border border-gray-700">
-              <UploadCloud className="w-5 h-5"/>
+              <UploadCloud className="w-5 h-5" />
             </div>
             <div>
               <div className="font-medium">Click to upload</div>
-              <div className="text-sm text-gray-400">or drag and drop an image file (JPG/PNG)</div>
+              <div className="text-sm text-gray-400">
+                or drag and drop an image file (JPG/PNG, ≤ 5MB)
+              </div>
             </div>
           </div>
         ) : (
           <div className="flex items-center gap-4">
-            <img src={preview} alt="preview" className="w-20 h-20 object-cover rounded-xl border border-gray-700" />
+            <img
+              src={preview}
+              alt="preview"
+              className="w-20 h-20 object-cover rounded-xl border border-gray-700"
+            />
             <div className="space-y-1">
-              <div className="text-sm text-gray-300 truncate max-w-[22ch]">{file.name}</div>
-              <div className="text-xs text-gray-500">{Math.round(file.size/1024)} KB</div>
+              <div className="text-sm text-gray-300 truncate max-w-[22ch]">
+                {file.name}
+              </div>
+              <div className="text-xs text-gray-500">
+                {Math.round(file.size / 1024)} KB
+              </div>
               <button
                 type="button"
                 className="text-xs text-red-300 hover:text-red-200"
-                onClick={(e)=>{e.stopPropagation(); onFile(null);}}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onFile(null);
+                }}
               >
                 Remove
               </button>
@@ -314,12 +556,16 @@ function DropZone({ label, file, preview, onFile, tips = [] }) {
           type="file"
           accept="image/*"
           className="hidden"
-          onChange={(e)=> onFile(e.target.files?.[0] || null)}
+          onChange={(e) => onFile(e.target.files?.[0] || null)}
         />
       </div>
-      {tips?.length ? (
+      {error ? (
+        <p className="text-xs text-red-400 mt-1">{error}</p>
+      ) : tips?.length ? (
         <ul className="mt-2 text-xs text-gray-400 space-y-1 list-disc pl-4">
-          {tips.map((t,i)=>(<li key={i}>{t}</li>))}
+          {tips.map((t, i) => (
+            <li key={i}>{t}</li>
+          ))}
         </ul>
       ) : null}
     </div>
@@ -328,25 +574,48 @@ function DropZone({ label, file, preview, onFile, tips = [] }) {
 
 function StatusStrip({ status, verified }) {
   const chip = (text, cls) => (
-    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${cls}`}>
+    <span
+      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${cls}`}
+    >
       {text}
     </span>
   );
 
-  let node = chip("Not submitted", "bg-gray-800 border border-gray-700 text-gray-300");
-  if (status === "pending") node = chip("Under review", "bg-yellow-500/15 text-yellow-300 border border-yellow-700/40");
-  if (status === "approved") node = chip("Approved", "bg-emerald-500/15 text-emerald-300 border border-emerald-700/40");
-  if (status === "rejected") node = chip("Rejected — edit & resubmit", "bg-red-500/15 text-red-300 border border-red-700/40");
+  let node = chip(
+    "Not submitted",
+    "bg-gray-800 border border-gray-700 text-gray-300"
+  );
+  if (status === "pending")
+    node = chip(
+      "Under review",
+      "bg-yellow-500/15 text-yellow-300 border border-yellow-700/40"
+    );
+  if (status === "approved")
+    node = chip(
+      "Approved",
+      "bg-emerald-500/15 text-emerald-300 border border-emerald-700/40"
+    );
+  if (status === "rejected")
+    node = chip(
+      "Rejected — edit & resubmit",
+      "bg-red-500/15 text-red-300 border border-red-700/40"
+    );
 
   return (
     <div className="flex items-center justify-between bg-gradient-to-r from-gray-900 to-gray-800 border border-gray-800 rounded-2xl p-4 mb-4">
       <div className="flex items-center gap-3">
         {status === "approved" ? (
-          <span className="p-2 rounded-xl bg-emerald-500/15 text-emerald-300 border border-emerald-700/40"><CheckCircle2 className="w-5 h-5"/></span>
+          <span className="p-2 rounded-xl bg-emerald-500/15 text-emerald-300 border border-emerald-700/40">
+            <CheckCircle2 className="w-5 h-5" />
+          </span>
         ) : status === "rejected" ? (
-          <span className="p-2 rounded-xl bg-red-500/15 text-red-300 border border-red-700/40"><XCircle className="w-5 h-5"/></span>
+          <span className="p-2 rounded-xl bg-red-500/15 text-red-300 border border-red-700/40">
+            <XCircle className="w-5 h-5" />
+          </span>
         ) : (
-          <span className="p-2 rounded-xl bg-blue-500/15 text-blue-300 border border-blue-700/40"><Camera className="w-5 h-5"/></span>
+          <span className="p-2 rounded-xl bg-blue-500/15 text-blue-300 border border-blue-700/40">
+            <Camera className="w-5 h-5" />
+          </span>
         )}
         <div>
           <div className="font-semibold">KYC status</div>
@@ -366,14 +635,32 @@ function StatusStrip({ status, verified }) {
   );
 }
 
-/* ------------------------------- hooks ------------------------------- */
+/* ------------------------------- helpers ------------------------------- */
 function useObjectUrl(file) {
   const [url, setUrl] = useState("");
   useEffect(() => {
-    if (!file) { setUrl(""); return; }
+    if (!file) {
+      setUrl("");
+      return;
+    }
     const u = URL.createObjectURL(file);
     setUrl(u);
     return () => URL.revokeObjectURL(u);
   }, [file]);
   return url;
+}
+
+function validateImageFile(file) {
+  if (!file) return null;
+  const validTypes = ["image/jpeg", "image/png", "image/webp"];
+  const tooBig = file.size > 5 * 1024 * 1024;
+  if (!validTypes.includes(file.type)) {
+    toast.error("Please upload JPG/PNG/WEBP images only.");
+    return null;
+  }
+  if (tooBig) {
+    toast.error("Image must be 5MB or less.");
+    return null;
+  }
+  return file;
 }

@@ -5,7 +5,7 @@ const API_BASE_URL = '/api'; // ⬅ keep everything on the same base (works with
 // Create axios instance
 const api = axios.create({
   baseURL: '/api', // ⬅ unchanged from your working setup
-  headers: { 'Content-Type': 'application/json' },
+  
 });
 
 // Token management
@@ -262,6 +262,18 @@ export const adminAPI = {
   deletePromotion: (promoId) => api.delete(`/admin/promotions/${promoId}`),
   trackPromoClick: (promoId) => api.post(`/admin/promotions/${promoId}/click`),
   updateUser: (userId, data) => api.put(`/admin/users/${userId}`, data),
+  
+
+
+   listScrims:   (params) => api.get('/admin/scrims', { params }),
+  listTournaments: (params) => api.get('/admin/tournaments', { params }),
+  listBookings: (params) => api.get('/admin/bookings', { params }),
+  listPayments: (params) => api.get('/admin/payments', { params }),
+  listRatings:  (params) => api.get('/admin/ratings', { params }),
+
+  // org controls
+  setOrgVerified: (userId, verified) => api.post(`/admin/orgs/${userId}/verify`, { verified }),
+  setOrgRanking:  (userId, ranking)  => api.post(`/admin/orgs/${userId}/ranking`, { ranking }),
     // KYC review
   listOrgKyc: () => api.get('/admin/org-kyc'),
   reviewOrgKyc: (userId, action, notes) => api.post(`/admin/org-kyc/${userId}/review`, { action, notes }),

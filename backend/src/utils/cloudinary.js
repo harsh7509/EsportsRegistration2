@@ -1,6 +1,13 @@
 // backend/src/utils/cloudinary.js
 import { v2 as cloudinary } from 'cloudinary';
 
+
+export async function uploadToCloud(localPath, folder = 'org-kyc') {
+  // TEMP: just return a local URL. Replace with Cloudinary/S3 later.
+  const file = path.basename(localPath);
+  return { secure_url: `/uploads/${file}` };
+}
+
 const CLOUDINARY_KEY = process.env.CLOUDINARY_KEY;
 const CLOUDINARY_SECRET = process.env.CLOUDINARY_SECRET;
 const CLOUDINARY_NAME =

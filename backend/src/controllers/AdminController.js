@@ -346,3 +346,163 @@ export const trackPromoClick = async (req, res) => {
     res.status(500).json({ message: 'Server error tracking click' });
   }
 };
+
+
+// --- NEW: deep lists with pagination & quick filters ---
+export const listScrims = async (req, res) => {
+  try {
+    const { page=1, limit=20, search, creatorId } = req.query;
+    const skip = (parseInt(page)-1)*parseInt(limit);
+    const q = {};
+    if (search) q.title = new RegExp(search, 'i');
+    if (creatorId && isValidObjectId(creatorId)) q.createdBy = creatorId;
+
+    const [items, total] = await Promise.all([
+      Scrim.find(q)
+        .populate('createdBy','name avatarUrl organizationInfo')
+        .sort({ createdAt: -1 }).skip(skip).limit(parseInt(limit)).lean(),
+      Scrim.countDocuments(q)
+    ]);
+
+    res.json({ items, total, page: +page, totalPages: Math.ceil(total / parseInt(limit)) });
+  } catch (e) {
+    console.error('listScrims error:', e);
+    res.status(500).json({ message: 'Server error fetching scrims' });
+  }
+};
+
+export const listTournaments = async (req, res) => {
+  try {
+    const { page=1, limit=20, search, orgId } = req.query;
+    const skip = (parseInt(page)-1)*parseInt(limit);
+    const q = {};
+    if (search) q.title = new RegExp(search, 'i');
+    if (orgId && isValidObjectId(orgId)) q.organizationId = orgId;
+
+    const Tournament = (await import('../models/Tournament.js')).default;
+    const [items, total] = await Promise.all([
+      Tournament.find(q)
+        .populate('organizationId','name avatarUrl organizationInfo')
+        .sort({ createdAt: -1 }).skip(skip).limit(parseInt(limit)).lean(),
+      Tournament.countDocuments(q)
+    ]);
+
+    res.json({ items, total, page: +page, totalPages: Math.ceil(total / parseInt(limit)) });
+  } catch (e) {
+    console.error('listTournaments error:', e);
+    res.status(500).json({ message: 'Server error fetching tournaments' });
+  }
+};
+
+export const listBookings = async (req, res) => {
+  try {
+    const { page=1, limit=20, userId, scrimId } = req.query;
+    const skip = (parseInt(page)-1)*parseInt(limit);
+    const q = {};
+    if (userId && isValidObjectId(userId)) q.userId = userId;
+    if (scrimId && isValidObjectId(scrimId)) q.scrimId = scrimId;
+
+    const [items, total] = await Promise.all([
+      Booking.find(q)
+        .populate('userId','name email')
+        .populate('scrimId','title date timeSlot')
+        .sort({ createdAt: -1 }).skip(skip).limit(parseInt(limit)).lean(),
+      Booking.countDocuments(q)
+    ]);
+
+    res.json({ items, total, page:+page, totalPages: Math.ceil(total/parseInt(limit)) });
+  } catch (e) {
+    console.error('listBookings error:', e);
+    res.status(500).json({ message: 'Server error fetching bookings' });
+  }
+};
+
+export const listPayments = async (req, res) => {
+  try {
+    const { page=1, limit=20, status } = req.query;
+    const skip = (parseInt(page)-1)*parseInt(limit);
+    const q = {};
+    if (status) q.status = status;
+
+    const [items, total] = await Promise.all([
+      Payment.find(q)
+        .populate('userId','name email')
+        .populate('scrimId','title')
+        .sort({ createdAt: -1 }).skip(skip).limit(parseInt(limit)).lean(),
+      Payment.countDocuments(q)
+    ]);
+
+    res.json({ items, total, page:+page, totalPages: Math.ceil(total/parseInt(limit)) });
+  } catch (e) {
+    console.error('listPayments error:', e);
+    res.status(500).json({ message: 'Server error fetching payments' });
+  }
+};
+
+export const listOrgRatings = async (req, res) => {
+  try {
+    const { page=1, limit=20, orgId } = req.query;
+    const skip = (parseInt(page)-1)*parseInt(limit);
+    const q = {};
+    if (orgId && isValidObjectId(orgId)) q.organizationId = orgId;
+
+    const [items, total] = await Promise.all([
+      OrgRating.find(q)
+        .populate('organizationId','name')
+        .populate('playerId','name email')
+        .populate('scrimId','title')
+        .sort({ createdAt: -1 }).skip(skip).limit(parseInt(limit)).lean(),
+      OrgRating.countDocuments(q)
+    ]);
+
+    res.json({ items, total, page:+page, totalPages: Math.ceil(total/parseInt(limit)) });
+  } catch (e) {
+    console.error('listOrgRatings error:', e);
+    res.status(500).json({ message: 'Server error fetching ratings' });
+  }
+};
+
+// --- quick org verify toggle & ranking update ---
+export const setOrgVerified = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    if (!isValidObjectId(userId)) return res.status(400).json({ message: 'Invalid userId' });
+
+    const { verified } = req.body;
+    const user = await User.findById(userId);
+    if (!user || user.role !== 'organization') return res.status(404).json({ message: 'Org not found' });
+
+    user.organizationInfo = {
+      ...(user.organizationInfo?.toObject?.() || user.organizationInfo || {}),
+      verified: Boolean(verified)
+    };
+    await user.save();
+    res.json({ message: 'Verification updated', user: { _id: user._id, organizationInfo: user.organizationInfo } });
+  } catch (e) {
+    console.error('setOrgVerified error:', e);
+    res.status(500).json({ message: 'Failed to update verification' });
+  }
+};
+
+export const setOrgRanking = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { ranking } = req.body;
+    if (!isValidObjectId(userId)) return res.status(400).json({ message: 'Invalid userId' });
+
+    const user = await User.findById(userId);
+    if (!user || user.role !== 'organization') return res.status(404).json({ message: 'Org not found' });
+
+    const r = Number(ranking);
+    user.organizationInfo = {
+      ...(user.organizationInfo?.toObject?.() || user.organizationInfo || {}),
+      ranking: Number.isFinite(r) ? r : 1000
+    };
+    await user.save();
+    res.json({ message: 'Ranking updated', user: { _id: user._id, organizationInfo: user.organizationInfo } });
+  } catch (e) {
+    console.error('setOrgRanking error:', e);
+    res.status(500).json({ message: 'Failed to update ranking' });
+  }
+};
+

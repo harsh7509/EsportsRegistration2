@@ -34,7 +34,7 @@ export const SocketProvider = ({ children }) => {
     try {
       s = io(SOCKET_URL, {
         path: '/socket.io',
-        transports: ['websocket', 'polling'],
+        transports: ['websocket'],
         auth: { token: token ? `Bearer ${token}` : undefined },
         reconnection: true,
         reconnectionAttempts: 5,

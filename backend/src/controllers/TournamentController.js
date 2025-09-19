@@ -114,21 +114,92 @@ export const getTournament = async (req, res) => {
 export const updateTournament = async (req, res) => {
   try {
     const { id } = req.params;
-    if (!isId(id)) return res.status(400).json({ message: 'Invalid tournament id' });
 
-    const me = req.user;
-    const existing = await Tournament.findById(id);
-    if (!existing) return res.status(404).json({ message: 'Tournament not found' });
+    // Pull only allowed fields
+    const {
+      title,
+      description,
+      startAt,
+      endAt,
+      // entry fee
+      entryFee,
+      price, // legacy
+      // prize pool inputs (free-form)
+      prizePool,
+      prizePoolTotal,
+      prizeBreakdown,
+      // optional legacy
+      prizes,
+      bannerUrl,
+      game,
+      capacity,
+      rules,
+    } = req.body;
 
-    if (String(existing.organizationId) !== String(me._id) && me.role !== 'admin') {
-      return res.status(403).json({ message: 'Not allowed' });
+    const $set = {};
+
+    if (title != null)        $set.title = title;
+    if (description != null)  $set.description = description;
+    if (bannerUrl != null)    $set.bannerUrl = bannerUrl;
+    if (game != null)         $set.game = game;
+    if (rules != null)        $set.rules = rules;
+
+    if (capacity != null)     $set.capacity = Number(capacity);
+
+    if (startAt)              $set.startAt = new Date(startAt);
+    if (endAt)                $set.endAt   = new Date(endAt);
+
+    // unify entry fee
+    if (entryFee != null)     $set.entryFee = Number(entryFee);
+    else if (price != null)   $set.entryFee = Number(price); // accept legacy client
+    // (optionally keep legacy price in sync)
+    if ($set.entryFee != null) $set.price = $set.entryFee;
+
+    // —— PRIZE POOL —— //
+    // If you sent a single "prizePool" from Edit page, coerce:
+    //  - numeric string → prizePoolTotal
+    //  - non-numeric string → prizePool (text)
+    if (prizePool !== undefined) {
+      const n = Number(prizePool);
+      if (!Number.isNaN(n) && prizePool !== '') {
+        $set.prizePoolTotal = n;
+        $set.prizePool = ''; // clear text if numeric chosen
+      } else {
+        $set.prizePool = String(prizePool);
+        // do not overwrite total unless explicitly provided
+      }
     }
 
-    const payload = { ...req.body };
-    if (payload.startAt) payload.startAt = new Date(payload.startAt);
-    if (payload.endAt) payload.endAt = new Date(payload.endAt);
+    // Allow explicit prizePoolTotal override if provided
+    if (prizePoolTotal !== undefined) {
+      $set.prizePoolTotal = Number(prizePoolTotal) || 0;
+    }
 
-    const updated = await Tournament.findByIdAndUpdate(id, payload, { new: true });
+    // Optional breakdown support: accept array or object map
+    if (prizeBreakdown !== undefined) {
+      let rows = [];
+      if (Array.isArray(prizeBreakdown)) {
+        rows = prizeBreakdown
+          .map(r => ({ place: Number(r.place), amount: Number(r.amount) }))
+          .filter(r => Number.isFinite(r.place) && Number.isFinite(r.amount));
+      } else if (prizeBreakdown && typeof prizeBreakdown === 'object') {
+        rows = Object.entries(prizeBreakdown)
+          .map(([k, v]) => ({ place: Number(k), amount: Number(v) }))
+          .filter(r => Number.isFinite(r.place) && Number.isFinite(r.amount));
+      }
+      $set.prizeBreakdown = rows;
+    }
+
+    // legacy blurb still allowed
+    if (prizes !== undefined) $set.prizes = prizes;
+
+    const updated = await Tournament.findByIdAndUpdate(
+      id,
+      { $set },
+      { new: true, runValidators: true }
+    );
+
+    if (!updated) return res.status(404).json({ message: 'Tournament not found' });
     return res.json({ tournament: updated });
   } catch (err) {
     console.error('updateTournament error:', err);

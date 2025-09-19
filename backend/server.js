@@ -62,12 +62,12 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/orgs', orgRoutes);
 // ✅ mount both prefixes so /api/organizations/* and /api/orgs/* both work
 app.use('/api/organizations', orgRoutes);
-app.use('/api/orgs',           orgRoutes);
+
 app.use('/api/promos', promosRoutes);
+
+
 app.use('/api/tournaments', tournamentsRoutes);
-app.use('/api/auth', authRoutes);
-app.use('/api/tournaments', tournamentsRoutes);
-app.use('/api/organizations', organizationsRoutes);
+
 
 
 // --- Socket.IO wiring ---

@@ -1,333 +1,401 @@
-import React, { useState } from 'react';
-import { X, Calendar, Users, DollarSign } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { X, Calendar, Users, DollarSign, Gamepad2, Hash } from 'lucide-react';
 import { scrimsAPI } from '../services/api';
 import toast from 'react-hot-toast';
 
+const INR = (n) => (isNaN(n) ? '0' : Number(n).toString());
+
 const CreateScrimModal = ({ isOpen, onClose, onScrimCreated }) => {
+  // 1) Hooks: ALWAYS call unconditionally, top-to-bottom, same order every render
   const [formData, setFormData] = useState({
     title: '',
     description: '',
     game: '',
-    platform: 'PC',
+    platform: 'Mobile',
     date: '',
-    timeSlot: {
-      start: '',
-      end: ''
-    },
+    timeSlot: { start: '', end: '' },
     capacity: 10,
     entryFee: 0,
     prizePool: '',
-    room: {
-      id: '',
-      password: ''
-    }
+    room: { id: '', password: '' },
   });
+  const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
 
-  const handleChange = (e) => {
+  const onChange = (e) => {
     const { name, value, type, checked } = e.target;
-    
     if (name.includes('.')) {
       const [parent, child] = name.split('.');
-      setFormData(prev => ({
+      setFormData((prev) => ({
         ...prev,
-        [parent]: {
-          ...prev[parent],
-          [child]: type === 'checkbox' ? checked : value
-        }
+        [parent]: { ...prev[parent], [child]: type === 'checkbox' ? checked : value },
       }));
     } else {
-      setFormData(prev => ({
-        ...prev,
-        [name]: type === 'checkbox' ? checked : value
-      }));
+      setFormData((prev) => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
     }
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
+  const todayStr = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d.toISOString().split('T')[0];
+  }, []);
 
+  const validate = useMemo(() => {
+    const e = {};
+    if (!formData.title.trim()) e.title = 'Title is required';
+    if (!formData.game.trim()) e.game = 'Game is required';
+    if (!formData.date) e.date = 'Pick a date';
+    if (!formData.timeSlot.start) e.start = 'Start time is required';
+    if (!formData.timeSlot.end) e.end = 'End time is required';
+    if (Number(formData.capacity) < 2) e.capacity = 'Minimum capacity is 2';
+
+    if (formData.timeSlot.start && formData.timeSlot.end && formData.date) {
+      const [sh, sm] = formData.timeSlot.start.split(':').map((x) => parseInt(x, 10));
+      const [eh, em] = formData.timeSlot.end.split(':').map((x) => parseInt(x, 10));
+      const d = new Date(formData.date);
+      const s = new Date(d); s.setHours(sh || 0, sm || 0, 0, 0);
+      const eEnd = new Date(d); eEnd.setHours(eh || 0, em || 0, 0, 0);
+      if (!(eEnd > s)) e.end = 'End time must be after start time';
+    }
+
+    if (formData.entryFee !== '' && Number(formData.entryFee) < 0) e.entryFee = 'Cannot be negative';
+    if (formData.prizePool !== '' && Number(formData.prizePool) < 0) e.prizePool = 'Cannot be negative';
+
+    return e;
+  }, [formData]);
+
+  // 2) Conditional return AFTER all hooks
+  if (!isOpen) return null;
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setErrors(validate);
+    if (Object.keys(validate).length) {
+      toast.error('Please fix the highlighted fields');
+      return;
+    }
+
+    setLoading(true);
     try {
-      // Combine date and time slots
       const scrimDate = new Date(formData.date);
-      const [startHour, startMin] = formData.timeSlot.start.split(':');
-      const [endHour, endMin] = formData.timeSlot.end.split(':');
+      const [startHour, startMin] = (formData.timeSlot.start || '00:00').split(':');
+      const [endHour, endMin] = (formData.timeSlot.end || '00:00').split(':');
 
       const startTime = new Date(scrimDate);
-      startTime.setHours(parseInt(startHour), parseInt(startMin));
+      startTime.setHours(parseInt(startHour, 10), parseInt(startMin, 10), 0, 0);
 
       const endTime = new Date(scrimDate);
-      endTime.setHours(parseInt(endHour), parseInt(endMin));
+      endTime.setHours(parseInt(endHour, 10), parseInt(endMin, 10), 0, 0);
 
       const scrimData = {
         ...formData,
         date: scrimDate.toISOString(),
-        timeSlot: {
-          start: startTime.toISOString(),
-          end: endTime.toISOString()
-        },
+        timeSlot: { start: startTime.toISOString(), end: endTime.toISOString() },
         capacity: parseInt(formData.capacity, 10),
-  entryFee: parseFloat(formData.entryFee) || 0,
-  prizePool: parseFloat(formData.prizePool) || 0, 
+        entryFee: parseFloat(formData.entryFee) || 0,
+        prizePool: parseFloat(formData.prizePool) || 0,
       };
 
       await scrimsAPI.create(scrimData);
       toast.success('Scrim created successfully!');
-      onScrimCreated();
-      
-      // Reset form
+      onScrimCreated?.();
+
       setFormData({
         title: '',
         description: '',
         game: '',
-        platform: 'PC',
+        platform: 'Mobile',
         date: '',
         timeSlot: { start: '', end: '' },
         capacity: 10,
-        isPaid: false,
-        price: 0,
-        room: { id: '', password: '' }
+        entryFee: 0,
+        prizePool: '',
+        room: { id: '', password: '' },
       });
+      setErrors({});
+      onClose?.();
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to create scrim');
+      toast.error(error?.response?.data?.message || 'Failed to create scrim');
     } finally {
       setLoading(false);
     }
   };
 
-  if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-800 rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="p-6">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl font-bold">Create New Scrim</h2>
-            <button onClick={onClose} className="text-gray-400 hover:text-white">
-              <X className="h-6 w-6" />
-            </button>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {/* Background */}
+      <div className="pointer-events-none absolute inset-0 bg-black/70" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(1200px_600px_at_20%_10%,#6d28d9_0,#111827_55%,#0b0f1a_100%)] opacity-60" />
+
+      {/* Card */}
+      <div className="relative z-10 w-full max-w-3xl rounded-2xl border border-white/10 bg-white/5 backdrop-blur">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-white/10 p-6">
+          <div className="flex items-center gap-3">
+            <div className="grid h-12 w-12 place-items-center rounded-xl bg-white/10 ring-1 ring-white/10">
+              <Gamepad2 className="h-6 w-6 text-white" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold">Create New Scrim</h2>
+              <p className="mt-0.5 text-xs text-white/60">Set details and publish to players</p>
+            </div>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <button
+            onClick={onClose}
+            className="rounded-lg p-2 text-white/70 hover:bg-white/10"
+            aria-label="Close"
+          >
+            <X className="h-6 w-6" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <form onSubmit={submit} noValidate className="p-6">
+          <div className="grid gap-6">
             {/* Basic Info */}
-            <div className="grid md:grid-cols-2 gap-4">
+            <div className="grid gap-4 md:grid-cols-2">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Title *
-                </label>
-                <input
-                  type="text"
-                  name="title"
-                  required
-                  className="input w-full"
-                  placeholder="Epic Valorant Scrim"
-                  value={formData.title}
-                  onChange={handleChange}
-                />
+                <label className="mb-1.5 block text-xs text-white/70">Title *</label>
+                <div className="relative">
+                  <Hash className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/50" />
+                  <input
+                    name="title"
+                    type="text"
+                    placeholder="Epic Valorant Scrim"
+                    className={`w-full rounded-xl border px-10 py-2.75 text-sm text-white outline-none placeholder:text-white/40 bg-white/5 focus:border-white/20 focus:ring-2 focus:ring-indigo-500/30 border-white/10 ${errors.title ? 'ring-2 ring-rose-500/40 border-rose-500/40' : ''}`}
+                    value={formData.title}
+                    onChange={onChange}
+                    required
+                  />
+                </div>
+                {errors.title && (
+                  <p className="mt-1.5 flex items-center gap-1 text-xs text-rose-300">{errors.title}</p>
+                )}
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Game *
-                </label>
-                <input
-                  type="text"
-                  name="game"
-                  required
-                  className="input w-full"
-                  placeholder="Valorant, CS2, etc."
-                  value={formData.game}
-                  onChange={handleChange}
-                />
+                <label className="mb-1.5 block text-xs text-white/70">Game *</label>
+                <div className="relative">
+                  <Gamepad2 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/50" />
+                  <input
+                    name="game"
+                    type="text"
+                    placeholder="Valorant, BGMI, CS2, etc."
+                    className={`w-full rounded-xl border px-10 py-2.75 text-sm text-white outline-none placeholder:text-white/40 bg-white/5 focus:border-white/20 focus:ring-2 focus:ring-indigo-500/30 border-white/10 ${errors.game ? 'ring-2 ring-rose-500/40 border-rose-500/40' : ''}`}
+                    value={formData.game}
+                    onChange={onChange}
+                    required
+                  />
+                </div>
+                {errors.game && (
+                  <p className="mt-1.5 flex items-center gap-1 text-xs text-rose-300">{errors.game}</p>
+                )}
               </div>
             </div>
 
+            {/* Description */}
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Description
-              </label>
+              <label className="mb-1.5 block text-xs text-white/70">Description</label>
               <textarea
                 name="description"
                 rows={3}
-                className="input w-full resize-none"
-                placeholder="Describe your scrim..."
-                min={new Date().toISOString().split('T')[0]}
+                placeholder="Describe your scrim rules, map, server, etc."
+                className="w-full resize-none rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none placeholder:text-white/40 focus:border-white/20 focus:ring-2 focus:ring-indigo-500/30"
                 value={formData.description}
-                onChange={handleChange}
+                onChange={onChange}
               />
             </div>
 
             {/* Date & Time */}
-            <div className="grid md:grid-cols-3 gap-4">
+            <div className="grid gap-4 md:grid-cols-3">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  <Calendar className="inline h-4 w-4 mr-1" />
-                  Date *
+                <label className="mb-1.5 block text-xs text-white/70">
+                  <span className="inline-flex items-center gap-1">
+                    <Calendar className="h-4 w-4" /> Date *
+                  </span>
                 </label>
                 <input
                   type="date"
                   name="date"
-                  required
-                  className="input w-full"
+                  min={todayStr}
+                  className={`w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.75 text-sm text-white outline-none placeholder:text-white/40 focus:border-white/20 focus:ring-2 focus:ring-indigo-500/30 ${errors.date ? 'ring-2 ring-rose-500/40 border-rose-500/40' : ''}`}
                   value={formData.date}
-                  onChange={handleChange}
+                  onChange={onChange}
+                  required
                 />
+                {errors.date && (
+                  <p className="mt-1.5 flex items-center gap-1 text-xs text-rose-300">{errors.date}</p>
+                )}
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Start Time *
-                </label>
+                <label className="mb-1.5 block text-xs text-white/70">Start Time *</label>
                 <input
                   type="time"
                   name="timeSlot.start"
-                  required
-                  className="input w-full"
+                  className={`w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.75 text-sm text-white outline-none focus:border-white/20 focus:ring-2 focus:ring-indigo-500/30 ${errors.start ? 'ring-2 ring-rose-500/40 border-rose-500/40' : ''}`}
                   value={formData.timeSlot.start}
-                  onChange={handleChange}
+                  onChange={onChange}
+                  required
                 />
+                {errors.start && (
+                  <p className="mt-1.5 flex items-center gap-1 text-xs text-rose-300">{errors.start}</p>
+                )}
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  End Time *
-                </label>
+                <label className="mb-1.5 block text-xs text-white/70">End Time *</label>
                 <input
                   type="time"
                   name="timeSlot.end"
-                  required
-                  className="input w-full"
+                  className={`w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.75 text-sm text-white outline-none focus:border-white/20 focus:ring-2 focus:ring-indigo-500/30 ${errors.end ? 'ring-2 ring-rose-500/40 border-rose-500/40' : ''}`}
                   value={formData.timeSlot.end}
-                  onChange={handleChange}
+                  onChange={onChange}
+                  required
                 />
+                {errors.end && (
+                  <p className="mt-1.5 flex items-center gap-1 text-xs text-rose-300">{errors.end}</p>
+                )}
               </div>
             </div>
 
             {/* Platform & Capacity */}
-            <div className="grid md:grid-cols-2 gap-4">
+            <div className="grid gap-4 md:grid-cols-2">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Platform
-                </label>
+                <label className="mb-1.5 block text-xs text-white/70">Platform</label>
                 <select
                   name="platform"
-                  className="input w-full"
+                  className="w-full rounded-xl border border-white/10  px-4 py-2.75 text-sm bg-white/10 outline-none focus:border-white/20 focus:ring-2 focus:ring-indigo-500/30"
                   value={formData.platform}
-                  onChange={handleChange}
-                >
-                  <option value="PC">PC</option>
-                  <option value="PlayStation">PlayStation</option>
-                  <option value="Xbox">Xbox</option>
-                  <option value="Mobile">Mobile</option>
+                  onChange={onChange}
+                > 
+                  <option className='text-black' value="Mobile">Mobile</option>
+                  <option className='text-black' value="PC" >PC</option>
+                  <option className='text-black' value="PlayStation">PlayStation</option>
+                  <option className='text-black' value="Xbox">Xbox</option>
+                  
                 </select>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  <Users className="inline h-4 w-4 mr-1" />
-                  Capacity *
+                <label className="mb-1.5 block text-xs text-white/70">
+                  <span className="inline-flex items-center gap-1">
+                    <Users className="h-4 w-4" /> Capacity *
+                  </span>
                 </label>
                 <input
                   type="number"
                   name="capacity"
                   min="2"
                   max="100"
-                  required
-                  className="input w-full"
+                  className={`w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.75 text-sm text-white outline-none focus:border-white/20 focus:ring-2 focus:ring-indigo-500/30 ${errors.capacity ? 'ring-2 ring-rose-500/40 border-rose-500/40' : ''}`}
                   value={formData.capacity}
-                  onChange={handleChange}
+                  onChange={onChange}
+                  required
                 />
+                {errors.capacity && (
+                  <p className="mt-1.5 flex items-center gap-1 text-xs text-rose-300">{errors.capacity}</p>
+                )}
               </div>
             </div>
 
             {/* Room Credentials */}
-            <div className="grid md:grid-cols-2 gap-4">
+            <div className="grid gap-4 md:grid-cols-2">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Room ID
-                </label>
+                <label className="mb-1.5 block text-xs text-white/70">Room ID</label>
                 <input
                   type="text"
                   name="room.id"
-                  className="input w-full"
-                  placeholder="Discord/Game room ID"
+                  placeholder="Discord / Game Room ID"
+                  className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.75 text-sm text-white outline-none placeholder:text-white/40 focus:border-white/20 focus:ring-2 focus:ring-indigo-500/30"
                   value={formData.room.id}
-                  onChange={handleChange}
+                  onChange={onChange}
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Room Password
-                </label>
+                <label className="mb-1.5 block text-xs text-white/70">Room Password</label>
                 <input
                   type="text"
                   name="room.password"
-                  className="input w-full"
                   placeholder="Room password"
+                  className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.75 text-sm text-white outline-none placeholder:text-white/40 focus:border-white/20 focus:ring-2 focus:ring-indigo-500/30"
                   value={formData.room.password}
-                  onChange={handleChange}
+                  onChange={onChange}
                 />
               </div>
             </div>
 
             {/* Pricing */}
-            <div>
-              <div className="grid md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    <DollarSign className="inline h-4 w-4 mr-1" />
-                    Entry Fee (₹)
-                  </label>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-1.5 block text-xs text-white/70">
+                  <span className="inline-flex items-center gap-1">
+                    <DollarSign className="h-4 w-4" /> Entry Fee (₹)
+                  </span>
+                </label>
+                <div className="relative">
+                  <DollarSign className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/50" />
                   <input
                     type="number"
                     name="entryFee"
                     min="0"
-                    step="0.01"
-                    className="input w-full"
+                    step="1"
                     placeholder="0 (Free if 0)"
-                    value={formData.entryFee}
-                    onChange={handleChange}
+                    className={`w-full rounded-xl border px-10 py-2.75 text-sm text-white outline-none placeholder:text-white/40 bg-white/5 focus:border-white/20 focus:ring-2 focus:ring-indigo-500/30 border-white/10 ${errors.entryFee ? 'ring-2 ring-rose-500/40 border-rose-500/40' : ''}`}
+                    value={INR(formData.entryFee)}
+                    onChange={onChange}
                   />
                 </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Prize Pool
-                  </label>
+                {errors.entryFee && (
+                  <p className="mt-1.5 flex items-center gap-1 text-xs text-rose-300">{errors.entryFee}</p>
+                )}
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-xs text-white/70">Prize Pool (₹)</label>
+                <div className="relative">
+                  <DollarSign className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/50" />
                   <input
-                    type="text"
+                    type="number"
                     name="prizePool"
-                    className="input w-full"
-                    placeholder="e.g., $500 + Trophies"
-                    value={formData.prizePool}
-                    onChange={handleChange}
+                    min="0"
+                    step="1"
+                    placeholder="e.g., 5000"
+                    className={`w-full rounded-xl border px-10 py-2.75 text-sm text-white outline-none placeholder:text-white/40 bg-white/5 focus:border-white/20 focus:ring-2 focus:ring-indigo-500/30 border-white/10 ${errors.prizePool ? 'ring-2 ring-rose-500/40 border-rose-500/40' : ''}`}
+                    value={INR(formData.prizePool)}
+                    onChange={onChange}
                   />
                 </div>
+                {errors.prizePool && (
+                  <p className="mt-1.5 flex items-center gap-1 text-xs text-rose-300">{errors.prizePool}</p>
+                )}
               </div>
             </div>
 
-            {/* Submit */}
-            <div className="flex space-x-3 pt-4">
+            {/* Actions */}
+            <div className="flex gap-3 pt-2">
               <button
                 type="button"
                 onClick={onClose}
-                className="flex-1 btn-secondary"
                 disabled={loading}
+                className="group relative flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-white/90 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-70"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="flex-1 btn-primary"
                 disabled={loading}
+                className="group relative flex-1 rounded-xl bg-indigo-500 px-4 py-3 text-sm font-semibold text-white hover:bg-indigo-600 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-70"
               >
-                {loading ? 'Creating...' : 'Create Scrim'}
+                {loading ? 'Creating…' : 'Create Scrim'}
+                <span className="pointer-events-none absolute inset-0 -z-10 rounded-xl bg-indigo-400/20 opacity-0 blur transition group-hover:opacity-100" />
               </button>
             </div>
-          </form>
-        </div>
+          </div>
+        </form>
       </div>
     </div>
   );

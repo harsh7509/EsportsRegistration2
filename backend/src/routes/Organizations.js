@@ -1,11 +1,15 @@
 import express from 'express';
 import { getOrgRankings, getOrgDetails, rateOrganization } from '../controllers/OrgController.js';
 import { authenticate } from '../middlewares/auth.js';
-import upload from '../utils/MulterConfig.js'; // aapke repo me `upload.js` hai
+import upload from '../utils/multerConfig.js'; // aapke repo me `upload.js` hai
 import { submitOrgKyc, myOrgKyc } from '../controllers/OrgKycController.js';
 
 
+
+
+
 const router = express.Router();
+
 
 // Public: rankings + details
 router.get('/rankings', getOrgRankings);
@@ -30,7 +34,6 @@ router.post('/:orgId/rate', authenticate, rateOrganization);
 
 
 
-router.get('/verify/me', authenticate, myOrgKyc);
-router.get('/:orgId', getOrgDetails);
+
 
 export default router;

@@ -11,7 +11,9 @@ import {
   updatePromotion,
   deletePromotion,
   trackPromoClick,
-  updateUserProfileAdmin
+  updateUserProfileAdmin,
+  listScrims, listTournaments, listBookings, listPayments, listOrgRatings,
+  setOrgVerified, setOrgRanking,
 } from '../controllers/AdminController.js';
 
 const router = express.Router();
@@ -34,6 +36,19 @@ router.post('/promotions', createPromotion);
 router.put('/promotions/:promoId', updatePromotion);
 router.delete('/promotions/:promoId', deletePromotion);
 router.post('/promotions/:promoId/click', trackPromoClick);
+
+
+// NEW: master lists
+router.get('/scrims', listScrims);
+router.get('/tournaments', listTournaments);
+router.get('/bookings', listBookings);
+router.get('/payments', listPayments);
+router.get('/ratings', listOrgRatings);
+
+// NEW: org controls
+router.post('/orgs/:userId/verify', setOrgVerified);
+router.post('/orgs/:userId/ranking', setOrgRanking);
+
 
 
 // Org KYC review

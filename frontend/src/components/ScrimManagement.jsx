@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Users, MessageSquare, Edit, Trash2, Send, Image as ImageIcon, X } from 'lucide-react';
 import { scrimsAPI, uploadAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -11,7 +11,6 @@ const ScrimManagement = ({ scrim, onScrimUpdate }) => {
   const [roomMessages, setRoomMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
 
-  // ⬇️ NEW: local image upload state
   const [selectedFile, setSelectedFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [uploadedUrl, setUploadedUrl] = useState('');
@@ -21,7 +20,7 @@ const ScrimManagement = ({ scrim, onScrimUpdate }) => {
     title: scrim.title,
     description: scrim.description,
     capacity: scrim.capacity,
-    room: { id: scrim?.room?.id || '', password: '' }, // do not prefill password
+    room: { id: scrim?.room?.id || '', password: '' },
   });
 
   useEffect(() => {
@@ -42,7 +41,6 @@ const ScrimManagement = ({ scrim, onScrimUpdate }) => {
   const fetchRoomMessages = async () => {
     try {
       const res = await scrimsAPI.getRoomMessages(scrim._id);
-      // backend might return array OR {room:{messages:[]}} — support both
       const data = res?.data;
       const msgs = Array.isArray(data) ? data : data?.room?.messages || data?.messages || [];
       setRoomMessages(msgs);
@@ -62,15 +60,14 @@ const ScrimManagement = ({ scrim, onScrimUpdate }) => {
     }
   };
 
-  // ⬇️ NEW: handle choosing a local image
   const handlePickFile = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setSelectedFile(file);
     setUploading(true);
     try {
-      const res = await uploadAPI.uploadImage(file); // POST /api/upload/image (multipart)
-      const url = res?.data?.url;
+      const res = await uploadAPI.uploadImage(file);
+      const url = res?.data?.url || res?.data?.imageUrl;
       if (!url) throw new Error('No URL returned');
       setUploadedUrl(url);
       toast.success('Image uploaded');
@@ -81,7 +78,6 @@ const ScrimManagement = ({ scrim, onScrimUpdate }) => {
       toast.error('Image upload failed');
     } finally {
       setUploading(false);
-      // clear the file input so user can reselect the same file if needed
       e.target.value = '';
     }
   };
@@ -89,7 +85,6 @@ const ScrimManagement = ({ scrim, onScrimUpdate }) => {
   const handleSendMessage = async (e) => {
     e.preventDefault();
     const text = (newMessage || '').trim();
-
     if (!text && !uploadedUrl) return;
 
     try {
@@ -117,7 +112,7 @@ const ScrimManagement = ({ scrim, onScrimUpdate }) => {
     try {
       await scrimsAPI.sendRoomMessage(scrim._id, {
         content: `Room ID: ${editData.room.id}\nPassword: ${editData.room.password}`,
-        type: 'credentials',
+        type: 'text',
       });
       await fetchRoomMessages();
       toast.success('Credentials sent');
@@ -145,7 +140,9 @@ const ScrimManagement = ({ scrim, onScrimUpdate }) => {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold">Manage Scrim</h2>
+        <h2 className="text-2xl font-bold bg-gradient-to-r from-white to-white/60 bg-clip-text text-transparent">
+          Manage Scrim
+        </h2>
         <button onClick={() => setShowEditModal(true)} className="btn-primary">
           <Edit className="h-4 w-4 mr-2" />
           Edit Scrim
@@ -153,135 +150,163 @@ const ScrimManagement = ({ scrim, onScrimUpdate }) => {
       </div>
 
       {/* Participants */}
-      <div className="card">
-        <h3 className="text-lg font-semibold mb-4 flex items-center">
-          <Users className="h-5 w-5 mr-2" />
-          Participants ({participants.length}/{scrim.capacity})
-        </h3>
+      <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur-md shadow-[0_10px_30px_rgba(0,0,0,0.35)]">
+        <div className="px-5 pt-5">
+          <h3 className="text-lg font-semibold mb-1 flex items-center">
+            <Users className="h-5 w-5 mr-2 text-gaming-cyan" />
+            Participants
+          </h3>
+          <div className="text-xs text-gray-400 mb-4">
+            {participants.length}/{scrim.capacity} registered
+          </div>
+        </div>
 
-        <div className="space-y-3">
+        <div className="px-5 pb-5">
           {participants.length ? (
-            participants.map((booking) => (
-              <div key={booking._id} className="bg-gray-700 rounded-lg p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium">{booking.playerId?.name}</p>
-                    <p className="text-xs text-gray-400">{booking.playerId?.email}</p>
-                  </div>
-                  <button
-                    onClick={() => handleRemoveParticipant(booking.playerId._id)}
-                    className="text-red-400 hover:text-red-300 p-2"
-                    title="Remove participant"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
+            <div className="grid md:grid-cols-2 gap-4">
+              {participants.map((booking) => {
+                const initials =
+                  booking?.playerId?.name?.split(' ')
+                    .map(s => s[0])
+                    .slice(0, 2)
+                    .join('')
+                    ?.toUpperCase() || 'P';
 
-                {/* Info */}
-                <div className="mt-3 pt-3 border-t border-gray-600">
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    {booking.playerInfo?.teamName && (
-                      <div><span className="text-gray-400">Team:</span> <span className="ml-2">{booking.playerInfo.teamName}</span></div>
-                    )}
-                    {booking.playerInfo?.contactNumber && (
-                      <div><span className="text-gray-400">Contact:</span> <span className="ml-2">{booking.playerInfo.contactNumber}</span></div>
-                    )}
-                    {booking.playerInfo?.discordId && (
-                      <div className="col-span-2"><span className="text-gray-400">Discord:</span> <span className="ml-2">{booking.playerInfo.discordId}</span></div>
-                    )}
+                return (
+                  <div
+                    key={booking._id}
+                    className="rounded-xl border border-white/10 bg-white/5 backdrop-blur-md p-4"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        {booking.playerId?.avatarUrl ? (
+                          <img
+                            src={booking.playerId.avatarUrl}
+                            alt=""
+                            className="h-10 w-10 rounded-full object-cover"
+                          />
+                        ) : (
+                          <div className="h-10 w-10 rounded-full bg-gaming-purple/30 grid place-items-center text-white/90 text-sm font-semibold">
+                            {initials}
+                          </div>
+                        )}
+                        <div>
+                          <p className="font-medium leading-tight">{booking.playerId?.name}</p>
+                          <p className="text-xs text-gray-400">{booking.playerId?.email}</p>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => handleRemoveParticipant(booking.playerId._id)}
+                        className="text-red-300/90 hover:text-red-200 p-2 rounded-lg hover:bg-red-500/10 transition-colors"
+                        title="Remove participant"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+
+                    <div className="mt-3 pt-3 border-t border-white/10">
+                      <div className="grid grid-cols-2 gap-3 text-sm">
+                        {booking.playerInfo?.teamName && (
+                          <div>
+                            <span className="text-gray-400">Team:</span>
+                            <span className="ml-2">{booking.playerInfo.teamName}</span>
+                          </div>
+                        )}
+                        {booking.playerInfo?.contactNumber && (
+                          <div>
+                            <span className="text-gray-400">Contact:</span>
+                            <span className="ml-2">{booking.playerInfo.contactNumber}</span>
+                          </div>
+                        )}
+                        {booking.playerInfo?.discordId && (
+                          <div className="col-span-2">
+                            <span className="text-gray-400">Discord:</span>
+                            <span className="ml-2">{booking.playerInfo.discordId}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="mt-2 flex items-center gap-2 text-xs">
+                        <span
+                          className={`px-2 py-1 rounded-full border ${
+                            booking.paid
+                              ? 'border-emerald-600/40 bg-emerald-500/10 text-emerald-300'
+                              : 'border-yellow-600/40 bg-yellow-500/10 text-yellow-300'
+                          }`}
+                        >
+                          {booking.paid ? '✓ Paid' : 'Payment Pending'}
+                        </span>
+                        <span className="text-gray-500">
+                          Booked: {new Date(booking.bookedAt).toLocaleDateString()}
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                  <div className="mt-2 flex items-center text-xs">
-                    <span className={`px-2 py-1 rounded ${booking.paid ? 'bg-green-900/20 text-green-400' : 'bg-yellow-900/20 text-yellow-400'}`}>
-                      {booking.paid ? '✓ Paid' : 'Payment Pending'}
-                    </span>
-                    <span className="ml-2 text-gray-500">
-                      Booked: {new Date(booking.bookedAt).toLocaleDateString()}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ))
+                );
+              })}
+            </div>
           ) : (
-            <p className="text-gray-400 text-center py-4">No participants yet</p>
+            <div className="text-center py-12">
+              <div className="mx-auto mb-3 h-10 w-10 rounded-full bg-white/5 grid place-items-center">
+                <Users className="h-5 w-5 text-gray-400" />
+              </div>
+              <p className="text-gray-300 font-medium">No participants yet</p>
+              <p className="text-gray-500 text-sm">Share your scrim to get the first registrations.</p>
+            </div>
           )}
         </div>
       </div>
 
       {/* Room Communication */}
-      <div className="card">
-        <h3 className="text-lg font-semibold mb-4 flex items-center">
-          <MessageSquare className="h-5 w-5 mr-2" />
-          Room Communication
-        </h3>
-
-        {/* Messages */}
-        <div className="bg-gray-700 rounded-lg p-4 h-64 overflow-y-auto mb-4">
-          {roomMessages.length ? (
-            <div className="space-y-3">
-              {roomMessages.map((m, i) => (
-                <div
-                  key={i}
-                  className={`p-3 rounded-lg ${
-                    m.type === 'credentials'
-                      ? 'bg-gaming-purple/20 border border-gaming-purple/30'
-                      : 'bg-gray-600'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm font-medium">{m.senderId?.name || 'Organizer'}</span>
-                    <span className="text-xs text-gray-400">{new Date(m.timestamp).toLocaleTimeString()}</span>
-                  </div>
-                  {m.content && <p className="text-sm whitespace-pre-wrap">{m.content}</p>}
-
-                  {isImage(m) && (
-                    <img
-                      src={m.imageUrl}
-                      alt="Shared"
-                      className="mt-2 max-w-xs rounded-lg cursor-pointer"
-                      onClick={() => window.open(m.imageUrl, '_blank')}
-                    />
-                  )}
-
-                  {m.type === 'credentials' && (
-                    <span className="text-xs text-gaming-purple">🔐 Room Credentials</span>
-                  )}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-gray-400 text-center">No messages yet</p>
-          )}
+      <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur-md shadow-[0_10px_30px_rgba(0,0,0,0.35)]">
+        <div className="px-5 pt-5">
+          <h3 className="text-lg font-semibold mb-1 flex items-center">
+            <MessageSquare className="h-5 w-5 mr-2 text-gaming-purple" />
+            Room Communication
+          </h3>
+          <p className="text-xs text-gray-400 mb-4">Send updates, images, and credentials to all participants.</p>
         </div>
 
-        {/* Send Message */}
-        <div className="space-y-3">
+        {/* Messages */}
+        <div className="px-5">
+          <div className="rounded-xl border border-white/10 bg-black/20 backdrop-blur h-72 overflow-y-auto p-3 space-y-3">
+            {roomMessages.length ? (
+              roomMessages.map((m, i) => (
+                <MessageBubble key={i} message={m} isImage={isImage(m)} />
+              ))
+            ) : (
+              <div className="h-full grid place-items-center text-gray-400 text-sm">
+                No messages yet
+              </div>
+            )}
+          </div>
+
           {/* Selected image preview */}
           {uploadedUrl && (
-            <div className="flex items-center gap-3">
-              <img src={uploadedUrl} alt="preview" className="h-16 rounded" />
-              <button className="btn-secondary" onClick={() => { setUploadedUrl(''); setSelectedFile(null); }}>
-                <X className="h-4 w-4" /> Remove
+            <div className="mt-3 flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 backdrop-blur p-2">
+              <img src={uploadedUrl} alt="preview" className="h-14 rounded-lg" />
+              <button
+                className="btn-secondary"
+                onClick={() => { setUploadedUrl(''); setSelectedFile(null); }}
+              >
+                <X className="h-4 w-4 mr-1" /> Remove
               </button>
             </div>
           )}
 
-          <form onSubmit={handleSendMessage} className="flex gap-2">
+          {/* Composer */}
+          <form onSubmit={handleSendMessage} className="sticky bottom-0 mt-3 flex gap-2">
             <input
               type="text"
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
-              placeholder="Send a message to participants…"
-              className="input flex-1"
+              placeholder="Write a message…"
+              className="input flex-1 bg-white/5 border-white/10 placeholder:text-gray-500"
             />
 
-            {/* File picker */}
-            <label className="btn-secondary cursor-pointer">
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handlePickFile}
-                hidden
-              />
+            <label className="btn-secondary cursor-pointer flex items-center justify-center">
+              <input type="file" accept="image/*" onChange={handlePickFile} hidden />
               {uploading ? 'Uploading…' : <ImageIcon className="h-4 w-4" />}
             </label>
 
@@ -289,20 +314,20 @@ const ScrimManagement = ({ scrim, onScrimUpdate }) => {
               <Send className="h-4 w-4" />
             </button>
           </form>
-        </div>
 
-        {/* Quick Actions */}
-        <div className="mt-4 flex space-x-2">
-          <button onClick={handleSendCredentials} className="btn-secondary text-sm">
-            Send Room Credentials
-          </button>
+          {/* Quick Actions */}
+          <div className="mt-4 pb-5">
+            <button onClick={handleSendCredentials} className="btn-secondary text-sm">
+              Send Room Credentials
+            </button>
+          </div>
         </div>
       </div>
 
       {/* Edit Modal */}
       {showEditModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800 rounded-lg max-w-2xl w-full p-6">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-4">
+          <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl max-w-2xl w-full p-6 shadow-[0_10px_40px_rgba(0,0,0,0.55)]">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-xl font-bold">Edit Scrim</h3>
               <button onClick={() => setShowEditModal(false)} className="text-gray-400 hover:text-white">×</button>
@@ -315,7 +340,7 @@ const ScrimManagement = ({ scrim, onScrimUpdate }) => {
                   type="text"
                   value={editData.title}
                   onChange={(e) => setEditData({ ...editData, title: e.target.value })}
-                  className="input w-full"
+                  className="input w-full bg-white/5 border-white/10"
                 />
               </div>
 
@@ -324,7 +349,7 @@ const ScrimManagement = ({ scrim, onScrimUpdate }) => {
                 <textarea
                   value={editData.description}
                   onChange={(e) => setEditData({ ...editData, description: e.target.value })}
-                  className="input w-full h-24 resize-none"
+                  className="input w-full h-24 resize-none bg-white/5 border-white/10"
                 />
               </div>
 
@@ -336,7 +361,7 @@ const ScrimManagement = ({ scrim, onScrimUpdate }) => {
                   max="100"
                   value={editData.capacity}
                   onChange={(e) => setEditData({ ...editData, capacity: parseInt(e.target.value, 10) || 0 })}
-                  className="input w-full"
+                  className="input w-full bg-white/5 border-white/10"
                 />
               </div>
 
@@ -347,7 +372,7 @@ const ScrimManagement = ({ scrim, onScrimUpdate }) => {
                     type="text"
                     value={editData.room.id}
                     onChange={(e) => setEditData({ ...editData, room: { ...editData.room, id: e.target.value } })}
-                    className="input w-full"
+                    className="input w-full bg-white/5 border-white/10"
                     placeholder="Discord/Game room ID"
                   />
                 </div>
@@ -357,7 +382,7 @@ const ScrimManagement = ({ scrim, onScrimUpdate }) => {
                     type="text"
                     value={editData.room.password}
                     onChange={(e) => setEditData({ ...editData, room: { ...editData.room, password: e.target.value } })}
-                    className="input w-full"
+                    className="input w-full bg-white/5 border-white/10"
                     placeholder="Room password"
                   />
                 </div>
@@ -374,5 +399,42 @@ const ScrimManagement = ({ scrim, onScrimUpdate }) => {
     </div>
   );
 };
+
+/* ---------- Small presentational piece for nicer bubbles ---------- */
+function MessageBubble({ message, isImage }) {
+  const isCredential = message.type === 'credentials';
+  return (
+    <div
+      className={[
+        'p-3 rounded-xl border',
+        isCredential
+          ? 'border-gaming-purple/40 bg-gaming-purple/10'
+          : 'border-white/10 bg-white/5 backdrop-blur'
+      ].join(' ')}
+    >
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-sm font-medium">{message.senderId?.name || 'Organizer'}</span>
+        <span className="text-xs text-gray-400">{new Date(message.timestamp).toLocaleTimeString()}</span>
+      </div>
+
+      {message.content && (
+        <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+      )}
+
+      {isImage && (
+        <img
+          src={message.imageUrl}
+          alt="Shared"
+          className="mt-2 max-w-xs rounded-lg cursor-pointer"
+          onClick={() => window.open(message.imageUrl, '_blank')}
+        />
+      )}
+
+      {isCredential && (
+        <span className="text-[11px] mt-2 inline-block text-gaming-purple">🔐 Room Credentials</span>
+      )}
+    </div>
+  );
+}
 
 export default ScrimManagement;

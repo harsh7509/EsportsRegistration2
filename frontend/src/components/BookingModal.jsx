@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Lock, Users } from 'lucide-react';
+import { X, Lock, Users, Phone, Hash, Shield } from 'lucide-react';
 import { scrimsAPI } from '../services/api';
 import toast from 'react-hot-toast';
 
@@ -12,158 +12,242 @@ const BookingModal = ({ scrim, isOpen, onClose, onBookingSuccess }) => {
     discordId: ''
   });
 
+  if (!isOpen) return null;
+
+  const onChange = (k) => (e) =>
+    setPlayerInfo((s) => ({ ...s, [k]: e.target.value }));
+
   const handleBooking = async () => {
+    if (!playerInfo.contactNumber.trim()) {
+      toast.error('Please enter your contact number');
+      return;
+    }
+
     setLoading(true);
     try {
       const response = await scrimsAPI.book(scrim._id, { playerInfo });
-      
+
       toast.success('Successfully booked scrim!');
-      onBookingSuccess(response.data.requiresPayment);
-      
-      // Get room credentials for free scrims
+      onBookingSuccess?.(response.data.requiresPayment);
+
+      // Auto-fetch room credentials for free scrims
       if (!response.data.requiresPayment) {
-        // Get room credentials after successful booking for free scrims
         const roomResponse = await scrimsAPI.getRoomCredentials(scrim._id);
         setRoomCredentials(roomResponse.data);
       }
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Booking failed');
+      toast.error(error?.response?.data?.message || 'Booking failed');
     } finally {
       setLoading(false);
     }
   };
 
-  if (!isOpen) return null;
+  const dateStr = (() => {
+    try {
+      return new Date(scrim.date).toLocaleDateString();
+    } catch {
+      return '—';
+    }
+  })();
+
+  const timeStr = (() => {
+    try {
+      const s = scrim.timeSlot?.start ? new Date(scrim.timeSlot.start).toLocaleTimeString() : '—';
+      const e = scrim.timeSlot?.end ? new Date(scrim.timeSlot.end).toLocaleTimeString() : '—';
+      return `${s} – ${e}`;
+    } catch {
+      return '—';
+    }
+  })();
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-800 rounded-lg max-w-md w-full p-6">
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="text-lg font-semibold">
-            {roomCredentials ? 'Room Credentials' : 'Confirm Booking'}
-          </h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-white">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {/* Background */}
+      <div className="pointer-events-none absolute inset-0 bg-black/70" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(1200px_600px_at_20%_10%,#6d28d9_0,#111827_55%,#0b0f1a_100%)] opacity-60" />
+
+      {/* Card */}
+      <div className="relative z-10 w-full max-w-md rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+        {/* Header */}
+        <div className="mb-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="grid h-10 w-10 place-items-center rounded-xl bg-white/10 ring-1 ring-white/10">
+              {roomCredentials ? (
+                <Shield className="h-5 w-5 text-white" />
+              ) : (
+                <Users className="h-5 w-5 text-white" />
+              )}
+            </div>
+            <div>
+              <h3 className="text-xl font-semibold">
+                {roomCredentials ? 'Room Credentials' : 'Confirm Booking'}
+              </h3>
+              <p className="mt-0.5 text-xs text-white/60">
+                {roomCredentials ? 'Access details for your scrim room' : 'Review details and provide contact'}
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={onClose}
+            className="rounded-lg p-2 text-white/70 hover:bg-white/10"
+            aria-label="Close"
+          >
             <X className="h-5 w-5" />
           </button>
         </div>
 
+        {/* Body */}
         {!roomCredentials ? (
           <>
-            <div className="mb-6">
-              <h4 className="font-medium mb-2">{scrim.title}</h4>
-              <div className="text-sm text-gray-400 space-y-1">
-                <p>Game: {scrim.game}</p>
-                <p>Date: {new Date(scrim.date).toLocaleDateString()}</p>
-                <p>Time: {new Date(scrim.timeSlot?.start).toLocaleTimeString()} - {new Date(scrim.timeSlot?.end).toLocaleTimeString()}</p>
-                {scrim.entryFee > 0 && <p className="text-green-400">Entry Fee: ${scrim.entryFee}</p>}
+            {/* Scrim summary */}
+            <div className="mb-5 rounded-xl border border-white/10 bg-white/5 p-4">
+              <h4 className="font-medium">{scrim.title}</h4>
+              <div className="mt-2 grid gap-1 text-sm text-white/70">
+                <p>Game: <span className="text-white/90">{scrim.game}</span></p>
+                <p>Date: <span className="text-white/90">{dateStr}</span></p>
+                <p>Time: <span className="text-white/90">{timeStr}</span></p>
                 {scrim.entryFee > 0 && (
-                  <div className="bg-yellow-900/20 border border-yellow-500/30 rounded-lg p-3">
-                    <p className="text-yellow-400 text-sm">
-                      💳 Payment will be required after booking confirmation
-                    </p>
-                  </div>
+                  <p className="text-emerald-300">Entry Fee: ₹{scrim.entryFee}</p>
                 )}
               </div>
-              
-              {/* Player Info Form */}
-              <div className="mt-4 space-y-3">
-                <h5 className="font-medium text-gray-300">Contact Information</h5>
+
+              {scrim.entryFee > 0 && (
+                <div className="mt-3 rounded-lg border border-yellow-500/30 bg-yellow-900/20 p-3">
+                  <p className="text-xs text-yellow-300">
+                    💳 Payment will be required after booking confirmation.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Contact form — matches Login input look */}
+            <div className="space-y-3">
+              <label className="text-xs text-white/70">Team Name (optional)</label>
+              <div className="relative">
+                <Users className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/50" />
                 <input
                   type="text"
-                  placeholder="Team Name (optional)"
-                  className="input w-full"
+                  placeholder="e.g., Night Raiders"
+                  className="w-full rounded-xl border px-10 py-2.75 text-sm text-white outline-none placeholder:text-white/40 bg-white/5 focus:border-white/20 focus:ring-2 focus:ring-indigo-500/30 border-white/10"
                   value={playerInfo.teamName}
-                  onChange={(e) => setPlayerInfo({...playerInfo, teamName: e.target.value})}
+                  onChange={onChange('teamName')}
                 />
-                <input
-                  type="tel"
-                  placeholder="Contact Number"
-                  className="input w-full"
-                  value={playerInfo.contactNumber}
-                  onChange={(e) => setPlayerInfo({...playerInfo, contactNumber: e.target.value})}
-                  required
-                />
-                <input
-                  type="text"
-                  placeholder="Discord ID (optional)"
-                  className="input w-full"
-                  value={playerInfo.discordId}
-                  onChange={(e) => setPlayerInfo({...playerInfo, discordId: e.target.value})}
-                />
+              </div>
+
+              <div>
+                <div className="mb-1.5 flex items-center justify-between">
+                  <label className="text-xs text-white/70">Contact Number</label>
+                </div>
+                <div className="relative">
+                  <Phone className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/50" />
+                  <input
+                    type="tel"
+                    placeholder="Your phone number"
+                    className={`w-full rounded-xl border px-10 py-2.75 text-sm text-white outline-none placeholder:text-white/40 bg-white/5 focus:border-white/20 focus:ring-2 focus:ring-indigo-500/30 border-white/10 ${!playerInfo.contactNumber ? '' : ''}`}
+                    value={playerInfo.contactNumber}
+                    onChange={onChange('contactNumber')}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-xs text-white/70">Discord ID (optional)</label>
+                <div className="relative">
+                  <Hash className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/50" />
+                  <input
+                    type="text"
+                    placeholder="e.g., gamer#1234"
+                    className="w-full rounded-xl border px-10 py-2.75 text-sm text-white outline-none placeholder:text-white/40 bg-white/5 focus:border-white/20 focus:ring-2 focus:ring-indigo-500/30 border-white/10"
+                    value={playerInfo.discordId}
+                    onChange={onChange('discordId')}
+                  />
+                </div>
               </div>
             </div>
 
-            <div className="flex space-x-3">
+            {/* Actions */}
+            <div className="mt-6 flex gap-3">
               <button
                 onClick={onClose}
-                className="flex-1 btn-secondary"
                 disabled={loading}
+                className="group relative flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-white/90 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-70"
               >
                 Cancel
               </button>
               <button
                 onClick={handleBooking}
-                className="flex-1 btn-primary"
                 disabled={loading || !playerInfo.contactNumber}
+                className="group relative flex-1 rounded-xl bg-indigo-500 px-4 py-3 text-sm font-semibold text-white hover:bg-indigo-600 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-70"
               >
-                {loading ? 'Booking...' : scrim.entryFee > 0 ? 'Book & Pay' : 'Confirm Booking'}
+                <span className="inline-flex items-center justify-center gap-2">
+                  {loading ? 'Booking…' : scrim.entryFee > 0 ? 'Book & Pay' : 'Confirm Booking'}
+                </span>
+                <span className="pointer-events-none absolute inset-0 -z-10 rounded-xl bg-indigo-400/20 opacity-0 blur transition group-hover:opacity-100" />
               </button>
             </div>
           </>
         ) : (
           <>
-            <div className="mb-6">
-              <div className="bg-green-900/20 border border-green-500/30 rounded-lg p-4 mb-4">
-                <div className="flex items-center text-green-400 mb-2">
-                  <Users className="h-4 w-4 mr-2" />
-                  Booking Confirmed!
-                </div>
-                <p className="text-sm text-gray-300">
-                  You've successfully booked this scrim. Here are your room credentials:
-                </p>
+            {/* Success + Credentials */}
+            <div className="mb-5 rounded-xl border border-green-500/30 bg-green-900/20 p-4">
+              <div className="mb-1.5 flex items-center text-green-300">
+                <Users className="mr-2 h-4 w-4" />
+                Booking Confirmed!
               </div>
+              <p className="text-sm text-white/80">
+                You’ve successfully booked this scrim. Here are your room credentials:
+              </p>
+            </div>
 
-              <div className="space-y-3">
-                <div className="bg-gray-700 rounded-lg p-3">
-                  <label className="text-xs text-gray-400 uppercase tracking-wide">Room ID</label>
-                  <div className="flex items-center justify-between">
-                    <code className="text-gaming-cyan font-mono">{roomCredentials.roomId}</code>
-                    <button
-                      onClick={() => navigator.clipboard.writeText(roomCredentials.roomId)}
-                      className="text-xs text-gray-400 hover:text-white"
-                    >
-                      Copy
-                    </button>
-                  </div>
-                </div>
-
-                <div className="bg-gray-700 rounded-lg p-3">
-                  <label className="text-xs text-gray-400 uppercase tracking-wide">Password</label>
-                  <div className="flex items-center justify-between">
-                    <code className="text-gaming-cyan font-mono">{roomCredentials.roomPassword}</code>
-                    <button
-                      onClick={() => navigator.clipboard.writeText(roomCredentials.roomPassword)}
-                      className="text-xs text-gray-400 hover:text-white"
-                    >
-                      Copy
-                    </button>
-                  </div>
+            <div className="space-y-3">
+              <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                <label className="text-xs text-white/60 uppercase tracking-wide">Room ID</label>
+                <div className="mt-1 flex items-center justify-between">
+                  <code className="font-mono text-indigo-300">{roomCredentials.roomId}</code>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(roomCredentials.roomId);
+                      toast.success('Room ID copied!');
+                    }}
+                    className="rounded-md px-2 py-1 text-xs text-white/70 hover:bg-white/10"
+                  >
+                    Copy
+                  </button>
                 </div>
               </div>
 
-              <div className="mt-4 p-3 bg-yellow-900/20 border border-yellow-500/30 rounded-lg">
-                <div className="flex items-center text-yellow-400 text-sm">
-                  <Lock className="h-4 w-4 mr-2" />
-                  Keep these credentials safe and don't share them with others.
+              <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                <label className="text-xs text-white/60 uppercase tracking-wide">Password</label>
+                <div className="mt-1 flex items-center justify-between">
+                  <code className="font-mono text-indigo-300">{roomCredentials.roomPassword}</code>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(roomCredentials.roomPassword);
+                      toast.success('Password copied!');
+                    }}
+                    className="rounded-md px-2 py-1 text-xs text-white/70 hover:bg-white/10"
+                  >
+                    Copy
+                  </button>
                 </div>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-xl border border-yellow-500/30 bg-yellow-900/20 p-3">
+              <div className="flex items-center text-sm text-yellow-300">
+                <Lock className="mr-2 h-4 w-4" />
+                Keep these credentials safe and don’t share them with others.
               </div>
             </div>
 
             <button
               onClick={onClose}
-              className="w-full btn-primary"
+              className="group relative mt-6 w-full rounded-xl bg-indigo-500 py-3 text-sm font-semibold text-white hover:bg-indigo-600 active:scale-[0.99]"
             >
-              Got it!
+              <span className="inline-flex items-center justify-center">Got it!</span>
+              <span className="pointer-events-none absolute inset-0 -z-10 rounded-xl bg-indigo-400/20 opacity-0 blur transition group-hover:opacity-100" />
             </button>
           </>
         )}

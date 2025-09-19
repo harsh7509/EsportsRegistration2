@@ -1,7 +1,34 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { MessageSquare, Send, Users, Lock, Image, X, Upload } from 'lucide-react';
+// src/components/RoomView.jsx
+import React, { useEffect, useRef, useState } from 'react';
+import { MessageSquare, Send, Lock, Upload } from 'lucide-react';
 import { scrimsAPI, uploadAPI } from '../services/api';
 import toast from 'react-hot-toast';
+
+const RolePill = ({ role }) => {
+  if (!role) return null;
+  const map = {
+    admin: 'text-rose-300 bg-rose-400/10 ring-1 ring-rose-300/20',
+    organization: 'text-sky-300 bg-sky-400/10 ring-1 ring-sky-300/20',
+    player: 'text-emerald-300 bg-emerald-400/10 ring-1 ring-emerald-300/20',
+  };
+  const cls = map[role] || 'text-slate-300 bg-white/5 ring-1 ring-white/10';
+  return (
+    <span className={`px-2 py-0.5 text-[10px] rounded-full ${cls}`}>
+      {role}
+    </span>
+  );
+};
+
+const formatTime = (ts) => {
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(new Date(ts));
+  } catch {
+    return '';
+  }
+};
 
 const RoomView = ({ scrimId, isOwner }) => {
   const [messages, setMessages] = useState([]);
@@ -9,24 +36,20 @@ const RoomView = ({ scrimId, isOwner }) => {
   const [loading, setLoading] = useState(true);
   const [uploadingImage, setUploadingImage] = useState(false);
   const fileInputRef = useRef(null);
+  const listRef = useRef(null);
   const messagesEndRef = useRef(null);
 
-  useEffect(() => {
-    fetchMessages();
-  }, [scrimId]);
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+  useEffect(() => { fetchMessages(); }, [scrimId]);
+  useEffect(() => { scrollToBottom(); }, [messages]);
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
   const fetchMessages = async () => {
     try {
       const response = await scrimsAPI.getRoomMessages(scrimId);
-      setMessages(response.data.room.messages || []);
+      setMessages(response?.data?.room?.messages || []);
     } catch (error) {
       console.error('Failed to fetch messages:', error);
       toast.error('Failed to load messages');
@@ -38,12 +61,8 @@ const RoomView = ({ scrimId, isOwner }) => {
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!newMessage.trim()) return;
-
     try {
-      await scrimsAPI.sendRoomMessage(scrimId, {
-        content: newMessage,
-        type: 'text'
-      });
+      await scrimsAPI.sendRoomMessage(scrimId, { content: newMessage, type: 'text' });
       setNewMessage('');
       fetchMessages();
       toast.success('Message sent');
@@ -54,9 +73,8 @@ const RoomView = ({ scrimId, isOwner }) => {
   };
 
   const handleImageUpload = async (event) => {
-    const file = event.target.files[0];
+    const file = event.target.files?.[0];
     if (!file) return;
-
     if (file.size > 5 * 1024 * 1024) {
       toast.error('Image size must be less than 5MB');
       return;
@@ -64,125 +82,156 @@ const RoomView = ({ scrimId, isOwner }) => {
 
     setUploadingImage(true);
     try {
-      console.log('📤 Uploading image to room chat:', file.name);
-      
       const response = await uploadAPI.uploadImage(file);
-      
-      // Send image message
       await scrimsAPI.sendRoomMessage(scrimId, {
         content: `Image: ${file.name}`,
         type: 'image',
-        imageUrl: response.data.imageUrl
+        imageUrl: response?.data?.imageUrl,
       });
-      
       fetchMessages();
       toast.success('Image uploaded successfully');
     } catch (error) {
-      console.error('❌ Failed to upload image:', error);
+      console.error('Upload failed:', error);
       toast.error('Failed to upload image');
     } finally {
       setUploadingImage(false);
-      // Reset file input
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
   return (
-    <div className="card">
-      <h3 className="text-lg font-semibold mb-4 flex items-center">
-        <MessageSquare className="h-5 w-5 mr-2" />
-        Scrim Room
-        <Lock className="h-4 w-4 ml-2 text-gray-400" />
-      </h3>
+    <div className="rounded-2xl border border-white/10 bg-slate-900/70 ring-1 ring-white/10 overflow-hidden backdrop-blur-sm">
+      {/* Header (sticky) */}
+      <div className="sticky top-0 z-10 flex items-center justify-between px-4 sm:px-5 py-3 bg-white/5 backdrop-blur-sm border-b border-white/10">
+        <div className="flex items-center gap-2">
+          <div className="grid h-8 w-8 place-items-center rounded-xl bg-indigo-500/15 ring-1 ring-indigo-400/20">
+            <MessageSquare className="h-4 w-4 text-indigo-300" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-white leading-none">Scrim Room</h3>
+            <p className="mt-0.5 text-[11px] text-slate-300/80 flex items-center gap-1">
+              <Lock className="h-3.5 w-3.5 opacity-70" />
+              Private chat for organizers & participants
+            </p>
+          </div>
+        </div>
+      </div>
 
-      {/* Messages */}
-      <div className="bg-gray-700 rounded-lg p-4 h-64 overflow-y-auto mb-4">
+      {/* Messages list */}
+      <div
+        ref={listRef}
+        className="h-80 sm:h-96 overflow-y-auto px-3 sm:px-4 py-4 bg-[radial-gradient(1200px_400px_at_10%_-10%,rgba(99,102,241,.08),transparent)]"
+      >
         {loading ? (
-          <div className="flex items-center justify-center h-full">
-            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-gaming-purple"></div>
+          <div className="grid gap-3">
+            {[...Array(6)].map((_, i) => (
+              <div key={i} className="flex gap-3">
+                <div className="h-9 w-9 rounded-full bg-white/5 animate-pulse" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-4 w-1/3 rounded bg-white/10 animate-pulse" />
+                  <div className="h-12 w-11/12 rounded-xl bg-white/10 animate-pulse" />
+                </div>
+              </div>
+            ))}
           </div>
         ) : messages.length > 0 ? (
           <div className="space-y-3">
-            {messages.map((message, index) => (
-              <div key={index} className={`p-3 rounded-lg ${
-                message.type === 'credentials' 
-                  ? 'bg-gaming-purple/20 border border-gaming-purple/30' 
+            {messages.map((message, idx) => {
+              const role = message?.senderId?.role;
+              const bubbleBase =
+                'px-3 py-2 rounded-2xl ring-1 text-sm';
+
+              const bubbleColor =
+                message.type === 'credentials'
+                  ? 'bg-indigo-500/10 ring-indigo-400/20 text-indigo-100'
                   : message.type === 'system'
-                  ? 'bg-blue-900/20 border border-blue-500/30'
-                  : 'bg-gray-600'
-              }`}>
-                <div className="flex items-center justify-between mb-1">
-                  <div className="flex items-center space-x-2">
-                    <span className="text-sm font-medium">{message.senderId?.name}</span>
-                    {message.senderId?.role && (
-                      <span className={`text-xs px-2 py-1 rounded ${
-                        message.senderId.role === 'organization' ? 'bg-blue-500/20 text-blue-400' :
-                        message.senderId.role === 'admin' ? 'bg-red-500/20 text-red-400' :
-                        'bg-green-500/20 text-green-400'
-                      }`}>
-                        {message.senderId.role}
-                      </span>
-                    )}
+                  ? 'bg-sky-500/10 ring-sky-400/20 text-sky-100'
+                  : 'bg-white/5 ring-white/10 text-slate-100';
+
+              return (
+                <div key={idx} className="flex items-start gap-3">
+                  {/* Avatar fallback */}
+                  <div className="grid h-9 w-9 flex-none place-items-center rounded-full bg-white/5 ring-1 ring-white/10 text-xs font-semibold text-slate-200">
+                    {(message?.senderId?.name || 'U')?.charAt(0)}
                   </div>
-                  <span className="text-xs text-gray-400">
-                    {new Date(message.timestamp).toLocaleTimeString()}
-                  </span>
-                </div>
-                
-                <div className="mt-1">
-                  {message.type === 'image' && message.imageUrl ? (
-                    <div>
-                      <p className="text-sm text-gray-300 mb-2">{message.content}</p>
-                      <img 
-                        src={message.imageUrl} 
-                        alt="Shared image"
-                        className="max-w-xs rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
-                        onClick={() => window.open(message.imageUrl, '_blank')}
-                      />
+
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-1 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="truncate text-sm font-medium text-white">
+                          {message?.senderId?.name || 'Unknown'}
+                        </span>
+                        <RolePill role={role} />
+                      </div>
+                      <span className="shrink-0 text-[11px] text-slate-400">
+                        {formatTime(message?.timestamp)}
+                      </span>
                     </div>
-                  ) : (
-                    <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-                  )}
+
+                    <div className={`${bubbleBase} ${bubbleColor}`}>
+                      {message.type === 'image' && message.imageUrl ? (
+                        <div>
+                          {message?.content && (
+                            <p className="mb-2 text-slate-200/90">{message.content}</p>
+                          )}
+                          <img
+                            src={message.imageUrl}
+                            alt="Shared"
+                            className="max-h-56 max-w-full rounded-xl border border-white/10 cursor-zoom-in hover:opacity-95 transition"
+                            onClick={() => window.open(message.imageUrl, '_blank')}
+                          />
+                        </div>
+                      ) : (
+                        <p className="whitespace-pre-wrap leading-relaxed">
+                          {message?.content}
+                        </p>
+                      )}
+                      {message.type === 'credentials' && (
+                        <div className="mt-2 text-[11px] text-indigo-300">🔐 Room Credentials</div>
+                      )}
+                      {message.type === 'system' && (
+                        <div className="mt-2 text-[11px] text-sky-300">📢 System Message</div>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                
-                {message.type === 'credentials' && (
-                  <span className="text-xs text-gaming-purple">🔐 Room Credentials</span>
-                )}
-                {message.type === 'system' && (
-                  <span className="text-xs text-blue-400">📢 System Message</span>
-                )}
-              </div>
-            ))}
+              );
+            })}
             <div ref={messagesEndRef} />
           </div>
         ) : (
-          <div className="flex items-center justify-center h-full text-gray-400">
+          <div className="flex h-full items-center justify-center">
             <div className="text-center">
-              <MessageSquare className="h-8 w-8 mx-auto mb-2 opacity-50" />
-              <p className="text-sm">No messages yet</p>
+              <div className="mx-auto mb-3 grid h-10 w-10 place-items-center rounded-xl bg-white/5 ring-1 ring-white/10">
+                <MessageSquare className="h-5 w-5 text-slate-300/80" />
+              </div>
+              <p className="text-sm text-slate-200">No messages yet</p>
               {!isOwner && (
-                <p className="text-xs mt-1">Only organizers can send messages</p>
+                <p className="mt-1 text-xs text-slate-400">
+                  Only organizers can send messages
+                </p>
               )}
             </div>
           </div>
         )}
       </div>
 
-      {/* Send Message (Only for org owners) */}
+      {/* Composer */}
       {isOwner && (
-        <div className="space-y-3">
-          <form onSubmit={handleSendMessage} className="flex space-x-2">
-            <input
-              type="text"
-              value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
-              placeholder="Send a message to participants..."
-              className="input flex-1"
-            />
-            
-            {/* Image Upload Button */}
+        <div className="border-t border-white/10 bg-white/5 px-3 sm:px-4 py-3">
+          <form onSubmit={handleSendMessage} className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <input
+                type="text"
+                value={newMessage}
+                onChange={(e) => setNewMessage(e.target.value)}
+                placeholder="Send a message to participants…"
+                className="w-full rounded-xl border border-white/10 bg-slate-800/70 px-3 py-2.5 text-slate-100 placeholder:text-slate-400
+                           focus:outline-none focus:ring-2 focus:ring-indigo-400/60"
+              />
+            </div>
+
+            {/* Hidden file input */}
             <input
               type="file"
               ref={fileInputRef}
@@ -190,27 +239,41 @@ const RoomView = ({ scrimId, isOwner }) => {
               onChange={handleImageUpload}
               className="hidden"
             />
+
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={uploadingImage}
-              className={`btn-secondary ${uploadingImage ? 'opacity-50' : ''}`}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5
+                         text-slate-200 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400
+                         disabled:opacity-50"
               title="Upload Image"
             >
               {uploadingImage ? (
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                </svg>
               ) : (
                 <Upload className="h-4 w-4" />
               )}
             </button>
-            
-            <button type="submit" className="btn-primary" disabled={!newMessage.trim()}>
+
+            <button
+              type="submit"
+              disabled={!newMessage.trim()}
+              className="inline-flex h-10 items-center gap-2 rounded-xl bg-indigo-600 px-4 text-sm font-medium text-white
+                         hover:bg-indigo-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400
+                         disabled:opacity-60"
+              title="Send"
+            >
               <Send className="h-4 w-4" />
+              <span className="hidden sm:inline">Send</span>
             </button>
           </form>
-          
+
           {uploadingImage && (
-            <p className="text-sm text-gaming-cyan">Uploading image...</p>
+            <p className="mt-2 text-xs text-indigo-300">Uploading image…</p>
           )}
         </div>
       )}

@@ -7,7 +7,10 @@ import TournamentList from './pages/TournamentList';
 
 import EditTournament from './pages/EditTournament';
 import TournamentManage from './pages/TournamentManage';
-import VerifyOrg from './pages/VerifyOrg';  
+import VerifyOrg from './pages/VerifyOrg';
+import AdminKycReview from './pages/AdminKycReview';
+import RequireAdmin from './components/RequireAdmin';
+
 
 
 import ErrorBoundary from './ErrorBoundary';
@@ -37,6 +40,7 @@ const Fallback = ({ label = 'Loading…' }) => (
 );
 
 function App() {
+
   return (
     <div className="min-h-screen bg-gaming-dark text-white">
       {/* TEMP heartbeat: proves the shell rendered; remove later */}
@@ -65,19 +69,20 @@ function App() {
               <Route path="/tournaments/:id" element={<TournamentDetail />} />
               <Route path="/tournaments" element={<TournamentList />} />
               <Route path="/tournaments/:id/edit" element={<EditTournament />} />
-              
-             
-<Route path="/tournaments/:id/manage" element={<TournamentManage />} />
- <Route
-   path="/org/verify"
-   element={
-     <ProtectedRoute>
-       <RoleGuard allowedRoles={['organization']}>
-         <VerifyOrg />
-       </RoleGuard>
-     </ProtectedRoute>
-   }
- />
+
+
+              <Route path="/tournaments/:id/manage" element={<TournamentManage />} />
+              <Route path="/admin/kyc" element={<RequireAdmin><AdminKycReview /></RequireAdmin>} />
+              <Route
+                path="/org/verify"
+                element={
+                  <ProtectedRoute>
+                    <RoleGuard allowedRoles={['organization']}>
+                      <VerifyOrg />
+                    </RoleGuard>
+                  </ProtectedRoute>
+                }
+              />
 
 
 
@@ -92,6 +97,9 @@ function App() {
                   </ProtectedRoute>
                 }
               />
+
+        
+
 
               <Route
                 path="/dashboard/player"

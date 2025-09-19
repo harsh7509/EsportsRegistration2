@@ -1,28 +1,30 @@
 // frontend/src/pages/TournamentManage.jsx
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { tournamentsAPI, uploadAPI } from '../services/api';
-import { Users, MessageSquare, Send, Upload, Plus, Edit3, Trash2, Scissors, X, } from 'lucide-react';
+import {
+  Users, MessageSquare, Send, Upload, Plus, Edit3, Trash2, Scissors, X,
+  Search, ChevronDown, Hash, ShieldCheck, Layers, Grid, Wand2, AlertTriangle
+} from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 
 export default function TournamentManage() {
   const { id } = useParams();
-  const { user: me, loading: authLoading, isAuthenticated } = useAuth();
+  const { loading: authLoading, isAuthenticated } = useAuth();
 
+  // data
   const [participants, setParticipants] = useState([]);
   const [groups, setGroups] = useState([]);
   const [selectedGroup, setSelectedGroup] = useState(null);
 
+  // chat
   const [messages, setMessages] = useState([]);
+  const visibleMsgs = messages.filter(m => m && m.type !== 'deleted');
   const [text, setText] = useState('');
   const fileRef = useRef(null);
   const [editingMsgId, setEditingMsgId] = useState(null);
   const [editText, setEditText] = useState('');
-  const visibleMsgs = messages.filter(m => m && m.type !== 'deleted');
-
-
-
 
   // group ops
   const [renameOpen, setRenameOpen] = useState(false);
@@ -32,21 +34,26 @@ export default function TournamentManage() {
   // tournament edit/delete
   const [tEditOpen, setTEditOpen] = useState(false);
   const [tForm, setTForm] = useState({ title: '', description: '', price: 0, capacity: 0 });
+
+  // team detail modal
   const [showTeamModal, setShowTeamModal] = useState(false);
   const [teamModalData, setTeamModalData] = useState(null);
 
-  // Manual group ui
+  // manual group
   const [manualOpen, setManualOpen] = useState(false);
   const [manualName, setManualName] = useState('');
   const [selectedPlayers, setSelectedPlayers] = useState({}); // userId => true
 
-  // NEW: participants filter
+  // filters / ui
   // 'all' | 'group' | 'ungrouped'
   const [listFilter, setListFilter] = useState('all');
+  const [search, setSearch] = useState('');
+  const [view, setView] = useState('list'); // 'list' | 'grid'
 
-  // --- helpers ---
+  const arr = v => (Array.isArray(v) ? v : []);
+  const toId = x => (typeof x === 'object' && x?._id ? x._id : x);
 
-  // refresh current group's messages without toggling selection
+  // --- loaders ---
   const refreshMessages = async () => {
     if (!selectedGroup) return;
     try {
@@ -56,20 +63,16 @@ export default function TournamentManage() {
       console.error('refreshMessages error:', e);
     }
   };
-  const arr = (v) => (Array.isArray(v) ? v : []);
-  const toId = (x) => (typeof x === 'object' && x?._id ? x._id : x);
 
   const load = async () => {
-    if (!isAuthenticated) return;
-    if (authLoading) return;
+    if (!isAuthenticated || authLoading) return;
     try {
       const [p, g, t] = await Promise.all([
         tournamentsAPI.getParticipants(id),
         tournamentsAPI.listGroups(id),
-        tournamentsAPI.get(id), // GET /api/tournaments/:id → { tournament }
+        tournamentsAPI.get(id),
       ]);
 
-      // normalize participants
       const plist = Array.isArray(p?.data?.participants)
         ? p.data.participants
         : Array.isArray(p?.participants)
@@ -78,7 +81,6 @@ export default function TournamentManage() {
             ? p.data
             : [];
 
-      // normalize groups
       const glist = Array.isArray(g?.data?.groups)
         ? g.data.groups
         : Array.isArray(g?.groups)
@@ -98,11 +100,10 @@ export default function TournamentManage() {
         });
       }
 
-      // keep current selection valid
       if (selectedGroup) {
-        const again = glist.find((gg) => String(gg._id) === String(selectedGroup._id));
+        const again = glist.find(gg => String(gg._id) === String(selectedGroup._id));
         setSelectedGroup(again || null);
-        if (!again) setListFilter('all'); // if selected group disappeared, show all
+        if (!again) setListFilter('all');
       }
     } catch (e) {
       console.error('load error:', e);
@@ -117,34 +118,27 @@ export default function TournamentManage() {
   useEffect(() => {
     if (authLoading) return;
     if (!isAuthenticated) {
-      setParticipants([]);
-      setGroups([]);
-      setSelectedGroup(null);
-      setMessages([]);
-      setSelectedPlayers({});
-      setText('');
-      setEditingMsgId(null);
-      setEditText('');
-      setManualOpen(false);
-      setManualName('');
+      setParticipants([]); setGroups([]); setSelectedGroup(null);
+      setMessages([]); setSelectedPlayers({});
+      setText(''); setEditingMsgId(null); setEditText('');
+      setManualOpen(false); setManualName('');
       return;
     }
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, authLoading, isAuthenticated]);
 
-  // ----- auto groups -----
-  const makeAutoGroups = async (size = 4) => {
+  // --- actions ---
+  const makeAutoGroups = async () => {
     try {
-      await tournamentsAPI.autoGroup(id, size);
+      await tournamentsAPI.autoGroup(id, 16);
       await load();
-      toast.success(`Created groups of ${size}`);
+      toast.success(`Created groups of 16 Teams`);
     } catch (e) {
       console.error('auto group error:', e);
       toast.error(e?.response?.data?.message || 'Failed to create groups / rooms');
     }
   };
-
 
   const removeFromTournament = async (uid) => {
     if (!uid) return;
@@ -158,22 +152,18 @@ export default function TournamentManage() {
     }
   };
 
-  // ----- open a group (toggle to ALL if clicked again) -----
   const openGroup = async (g) => {
     try {
       if (selectedGroup && String(selectedGroup._id) === String(g._id)) {
-        // deselect and show all
         setSelectedGroup(null);
         setMessages([]);
         setListFilter('all');
         return;
       }
-
-      const picked = groups.find((x) => String(x._id) === String(g._id)) || g;
+      const picked = groups.find(x => String(x._id) === String(g._id)) || g;
       setSelectedGroup(picked);
       setListFilter('group');
-
-      const res = await tournamentsAPI.getGroupRoomMessages(id, picked._id); // ensures room
+      const res = await tournamentsAPI.getGroupRoomMessages(id, picked._id);
       setMessages(arr(res?.data?.room?.messages));
     } catch (e) {
       console.error('openGroup error:', e);
@@ -181,12 +171,11 @@ export default function TournamentManage() {
     }
   };
 
-  // ----- force create room (uses same ensure path as open) -----
   const createRoomNow = async () => {
     if (!selectedGroup) return;
     try {
       await tournamentsAPI.getGroupRoomMessages(id, selectedGroup._id);
-      await load(); // refresh groups so roomId is reflected if you need it elsewhere
+      await load();
       toast.success('Room ready for this group');
     } catch (e) {
       console.error('createRoomNow error:', e);
@@ -194,15 +183,11 @@ export default function TournamentManage() {
     }
   };
 
-  // ----- send text -----
   const sendText = async (e) => {
     e.preventDefault();
     if (!selectedGroup || !text.trim()) return;
     try {
-      await tournamentsAPI.sendGroupRoomMessage(id, selectedGroup._id, {
-        content: text,
-        type: 'text',
-      });
+      await tournamentsAPI.sendGroupRoomMessage(id, selectedGroup._id, { content: text, type: 'text' });
       setText('');
       await refreshMessages();
     } catch (e) {
@@ -211,7 +196,6 @@ export default function TournamentManage() {
     }
   };
 
-  // ----- send image -----
   const sendImage = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -233,15 +217,8 @@ export default function TournamentManage() {
     }
   };
 
-  // ----- messages: edit/delete -----
-  const startEditMsg = (m) => {
-    setEditingMsgId(m._id);
-    setEditText(m.content || '');
-  };
-  const cancelEditMsg = () => {
-    setEditingMsgId(null);
-    setEditText('');
-  };
+  const startEditMsg = (m) => { setEditingMsgId(m._id); setEditText(m.content || ''); };
+  const cancelEditMsg = () => { setEditingMsgId(null); setEditText(''); };
   const saveEditMsg = async () => {
     if (!selectedGroup || !editingMsgId) return;
     try {
@@ -264,12 +241,7 @@ export default function TournamentManage() {
     }
   };
 
-  // ----- groups: rename / move / remove -----
-  const openRename = (g) => {
-    setSelectedGroup(g);
-    setRenameValue(g?.name || '');
-    setRenameOpen(true);
-  };
+  const openRename = (g) => { setSelectedGroup(g); setRenameValue(g?.name || ''); setRenameOpen(true); };
   const doRename = async () => {
     if (!selectedGroup || !renameValue.trim()) return;
     try {
@@ -286,7 +258,6 @@ export default function TournamentManage() {
     const memberIds = Object.entries(selectedPlayers).filter(([, v]) => v).map(([k]) => k);
     if (!memberIds.length) return toast.error('Pick at least 1 player');
     if (!moveToGroupId) return toast.error('Select a target group');
-
     try {
       for (const uid of memberIds) {
         await tournamentsAPI.moveGroupMember(id, {
@@ -314,7 +285,6 @@ export default function TournamentManage() {
     }
   };
 
-  // ----- tournament: update / delete -----
   const saveTournament = async () => {
     try {
       await tournamentsAPI.update(id, {
@@ -335,20 +305,16 @@ export default function TournamentManage() {
     try {
       await tournamentsAPI.deleteTournament(id);
       toast.success('Tournament deleted');
-      // optionally navigate away:
-      // navigate('/tournaments');
     } catch (e) {
       toast.error(e?.response?.data?.message || 'Delete failed');
     }
   };
 
-  // ----- room deletion -----
   const deleteRoomNow = async () => {
     if (!selectedGroup) return;
     if (!window.confirm(`Delete room for "${selectedGroup.name}"? Messages will be removed.`)) return;
     try {
       await tournamentsAPI.deleteGroupRoom(id, selectedGroup._id);
-      // reload room/messages (will be empty/auto-create on next ensure)
       setMessages([]);
       toast.success('Room deleted');
     } catch (e) {
@@ -357,23 +323,14 @@ export default function TournamentManage() {
     }
   };
 
-  // ----- manual group creation -----
   const toggleSel = (u) =>
     setSelectedPlayers((m) => ({ ...m, [u]: !m[u] }));
 
   const createManualGroup = async () => {
     try {
-      const memberIds = Object.entries(selectedPlayers)
-        .filter(([, v]) => v)
-        .map(([k]) => k);
-
+      const memberIds = Object.entries(selectedPlayers).filter(([, v]) => v).map(([k]) => k);
       if (!memberIds.length) return toast.error('Pick at least 1 player');
-
-      await tournamentsAPI.createGroup(id, {
-        name: manualName?.trim() || undefined,
-        memberIds,
-      });
-
+      await tournamentsAPI.createGroup(id, { name: manualName?.trim() || undefined, memberIds });
       setManualOpen(false);
       setManualName('');
       setSelectedPlayers({});
@@ -385,44 +342,88 @@ export default function TournamentManage() {
     }
   };
 
-  // Build a set of grouped userIds once for filtering
-  const groupedSet = new Set(
-    groups.flatMap(g => (g.memberIds || []).map(m => String(toId(m))))
+  // --- derived ---
+  const groupedSet = useMemo(
+    () => new Set(groups.flatMap(g => (g.memberIds || []).map(m => String(toId(m))))),
+    [groups]
   );
 
-  // derive visible participant list
-  const visibleParticipants = (() => {
+  const visibleParticipants = useMemo(() => {
+    let list = participants;
     if (listFilter === 'ungrouped') {
-      return participants.filter(p => !groupedSet.has(String(toId(p.userId))));
-    }
-    if (listFilter === 'group' && selectedGroup) {
+      list = list.filter(p => !groupedSet.has(String(toId(p.userId))));
+    } else if (listFilter === 'group' && selectedGroup) {
       const selSet = new Set((selectedGroup.memberIds || []).map(u => String(toId(u))));
-      return participants.filter(p => selSet.has(String(toId(p.userId))));
+      list = list.filter(p => selSet.has(String(toId(p.userId))));
     }
-    return participants;
-  })();
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter(p => {
+        const uObj = typeof p.userId === 'object' ? p.userId : null;
+        const displayName =
+          (p.teamName && p.teamName.trim()) ||
+          (p.team && p.team.name) ||
+          p.ign ||
+          (uObj?.name) ||
+          'player';
+        const blob = [
+          displayName,
+          p.realName || '',
+          p.phone || '',
+          ...(Array.isArray(p.players) ? p.players.map(pp => `${pp.ignName} ${pp.ignId}`) : [])
+        ].join(' ').toLowerCase();
+        return blob.includes(q);
+      });
+    }
+    return list;
+  }, [participants, listFilter, selectedGroup, groupedSet, search]);
 
+  const selectedCount = useMemo(
+    () => Object.values(selectedPlayers).filter(Boolean).length,
+    [selectedPlayers]
+  );
+
+  // --- UI ---
   return (
-    <div className="max-w-6xl mx-auto p-6">
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-lg font-semibold">Manage Tournament</h1>
-        <div className="flex gap-2">
-          <button className="btn-secondary" onClick={() => setTEditOpen(true)}>Edit</button>
-          <button className="btn-danger" onClick={deleteTournament}>Delete</button>
+    <div className="max-w-7xl mx-auto p-6">
+      {/* Header */}
+      <div className="mb-6 flex items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold">Tournament Manager</h1>
+          <p className="text-sm text-white/60">Group players, run rooms, and message teams.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button className="btn-secondary" onClick={() => setTEditOpen(true)}>
+            <Edit3 className="h-4 w-4 mr-2" /> Edit
+          </button>
+          <button className="btn-danger" onClick={deleteTournament}>
+            <Trash2 className="h-4 w-4 mr-2" /> Delete
+          </button>
         </div>
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-6">
-        {/* left: participants */}
-        <div className="card lg:col-span-1">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="font-semibold flex items-center">
-              <Users className="h-4 w-4 mr-2" />
-              Participants
-            </h2>
-            <div className="flex gap-2">
+      <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr_1fr]">
+        {/* Participants */}
+        <section className="card relative">
+          <div className="mb-4 flex items-center justify-between gap-2">
+            <h3 className="font-semibold flex items-center gap-2">
+              <Users className="h-4 w-4" /> Participants
+              <span className="text-xs text-white/50">({visibleParticipants.length})</span>
+            </h3>
+
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-white/40" />
+                <input
+                  className="input pl-9 w-32"
+                  placeholder="Search"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
+
               <select
-                className="input"
+                className="input w-25"
                 value={listFilter}
                 onChange={(e) => setListFilter(e.target.value)}
                 title="Filter participants"
@@ -431,18 +432,151 @@ export default function TournamentManage() {
                 <option value="group" disabled={!selectedGroup}>Selected group</option>
                 <option value="ungrouped">Ungrouped only</option>
               </select>
-              <button className="btn-secondary" onClick={() => makeAutoGroups(4)}>
-                Auto 4
-              </button>
-              <button className="btn-secondary" onClick={() => makeAutoGroups(5)}>
-                Auto 5
+
+              <button className="btn-secondary w-40" onClick={makeAutoGroups} title="Auto-create groups of 16">
+                <Wand2 className="h-4 w-4  " /> Auto (16 teams)
               </button>
             </div>
           </div>
 
-          <div className="space-y-2 max-h-80 overflow-auto">
-            {visibleParticipants.length ? (
-              visibleParticipants.map((p) => {
+          {/* Bulk move toolbar */}
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/5 p-2">
+            <div className="text-sm text-white/70">
+              Selected: <span className="font-medium">{selectedCount}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <select className="input" value={moveToGroupId} onChange={(e) => setMoveToGroupId(e.target.value)}>
+                <option value="">Move selected →</option>
+                {groups.map(g => <option key={g._id} value={g._id}>{g.name}</option>)}
+              </select>
+              <button className="btn-secondary" onClick={moveSelectedPlayers} disabled={!moveToGroupId || !selectedCount}>
+                Move
+              </button>
+            </div>
+          </div>
+
+          {/* List/Grid toggle */}
+          <div className="mb-3 flex items-center gap-2">
+            <button
+              className={`px-3 py-1 rounded ${view === 'list' ? 'bg-gaming-purple/20 text-gaming-purple' : 'bg-white/5 text-white/70'}`}
+              onClick={() => setView('list')}
+              title="List view"
+            >
+              <Layers className="h-4 w-4" />
+            </button>
+            <button
+              className={`px-3 py-1 rounded ${view === 'grid' ? 'bg-gaming-purple/20 text-gaming-purple' : 'bg-white/5 text-white/70'}`}
+              onClick={() => setView('grid')}
+              title="Grid view"
+            >
+              <Grid className="h-4 w-4" />
+            </button>
+
+            <div className="ml-auto">
+              <button className="btn-secondary" onClick={() => setManualOpen(v => !v)}>
+                <Plus className="h-4 w-4 mr-2" /> Create group manually
+              </button>
+            </div>
+          </div>
+
+          {/* Manual group drawer */}
+          {manualOpen && (
+            <div className="mb-4 rounded-lg border border-white/10 bg-white/5 p-3">
+              <div className="flex items-center gap-2">
+                <input
+                  className="input flex-1"
+                  placeholder="Group name (optional)"
+                  value={manualName}
+                  onChange={(e) => setManualName(e.target.value)}
+                />
+                <button className="btn-primary" onClick={createManualGroup}>Create</button>
+              </div>
+              {selectedCount === 0 && (
+                <div className="mt-2 flex items-center gap-2 text-xs text-white/60">
+                  <AlertTriangle className="h-3.5 w-3.5" /> Select at least one player from the list below.
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Participants */}
+          {view === 'grid' ? (
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 max-h-[32rem] overflow-auto pr-1">
+              {visibleParticipants.length ? visibleParticipants.map((p) => {
+                const uId = toId(p.userId);
+                const uObj = typeof p.userId === 'object' ? p.userId : null;
+                const isInSelectedGroup = !!(selectedGroup?.memberIds || []).find(m => String(toId(m)) === String(uId));
+                const displayName =
+                  (p.teamName && p.teamName.trim()) ||
+                  (p.team && p.team.name) ||
+                  p.ign ||
+                  (uObj?.name) ||
+                  'Player';
+
+                return (
+                  <div key={uId} className="rounded-lg border border-white/10 bg-white/5 p-3">
+                    <label className="flex items-center gap-3">
+                      <input
+                        type="checkbox"
+                        className="accent-gaming-purple"
+                        checked={!!selectedPlayers[uId]}
+                        onChange={() => toggleSel(uId)}
+                      />
+                      {uObj?.avatarUrl ? (
+                        <img src={uObj.avatarUrl} alt="" className="h-8 w-8 rounded-full object-cover" />
+                      ) : (
+                        <div className="h-8 w-8 rounded-full bg-gray-600 grid place-items-center">
+                          <span className="text-xs">{(uObj?.name?.[0] || 'P').toUpperCase()}</span>
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium">{displayName}</div>
+                        {Array.isArray(p.players) && p.players.length > 0 && (
+                          <div className="truncate text-[11px] text-white/60">
+                            {p.players.filter(pp => pp.ignName && pp.ignId).map(pp => `${pp.ignName} (${pp.ignId})`).join(', ')}
+                          </div>
+                        )}
+                      </div>
+                    </label>
+
+                    <div className="mt-2 flex items-center justify-between">
+                      <button
+                        type="button"
+                        className="text-xs underline text-gaming-cyan hover:opacity-80"
+                        onClick={() => { setTeamModalData(p); setShowTeamModal(true); }}
+                      >
+                        Details
+                      </button>
+                      <div className="flex items-center gap-2">
+                        {selectedGroup && isInSelectedGroup && (
+                          <button
+                            type="button"
+                            className="text-red-400 hover:text-red-300"
+                            title="Remove from this group"
+                            onClick={() => removePlayerFromSelectedGroup(uId)}
+                          >
+                            <Scissors className="h-4 w-4" />
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className="text-red-400 hover:text-red-300"
+                          title="Remove from tournament"
+                          onClick={() => removeFromTournament(uId)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              }) : (
+                <div className="text-gray-400 text-sm">No registrations yet</div>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-2 max-h-[32rem] overflow-auto pr-1">
+              {visibleParticipants.length ? visibleParticipants.map((p) => {
                 const uId = toId(p.userId);
                 const uObj = typeof p.userId === 'object' ? p.userId : null;
                 const isInSelectedGroup = !!(selectedGroup?.memberIds || []).find(m => String(toId(m)) === String(uId));
@@ -453,40 +587,29 @@ export default function TournamentManage() {
                   (uObj?.name) ||
                   'Player';
                 return (
-                  <label
-                    key={uId}
-                    className="flex items-center gap-2 p-2 rounded hover:bg-gray-700 cursor-pointer"
-                  >
+                  <label key={uId} className="flex items-center gap-2 p-2 rounded hover:bg-white/5 cursor-pointer">
                     <input
                       type="checkbox"
-                      className="mr-2"
+                      className="mr-1 accent-gaming-purple"
                       checked={!!selectedPlayers[uId]}
                       onChange={() => toggleSel(uId)}
                     />
                     {uObj?.avatarUrl ? (
-                      <img
-                        src={uObj.avatarUrl}
-                        alt=""
-                        className="h-8 w-8 rounded-full object-cover"
-                      />
+                      <img src={uObj.avatarUrl} alt="" className="h-8 w-8 rounded-full object-cover" />
                     ) : (
                       <div className="h-8 w-8 rounded-full bg-gray-600 grid place-items-center">
-                        <span className="text-xs">
-                          {(uObj?.name?.[0] || 'P').toUpperCase()}
-                        </span>
+                        <span className="text-xs">{(uObj?.name?.[0] || 'P').toUpperCase()}</span>
                       </div>
                     )}
-                    <div className="text-sm flex-1">
-                      <div className="text-sm flex-1">{displayName}</div>
+                    <div className="text-sm flex-1 min-w-0">
+                      <div className="truncate">{displayName}</div>
                       {Array.isArray(p.players) && p.players.length > 0 && (
-                        <div className="text-xs text-gray-400">
-                          {p.players
-                            .filter(pp => pp.ignName && pp.ignId)
-                            .map(pp => `${pp.ignName} (${pp.ignId})`)
-                            .join(', ')}
+                        <div className="text-xs text-white/60 truncate">
+                          {p.players.filter(pp => pp.ignName && pp.ignId).map(pp => `${pp.ignName} (${pp.ignId})`).join(', ')}
                         </div>
                       )}
                     </div>
+
                     <button
                       type="button"
                       className="text-xs underline text-gaming-cyan hover:opacity-80 mr-2"
@@ -494,52 +617,6 @@ export default function TournamentManage() {
                     >
                       Details
                     </button>
-                   {showTeamModal && teamModalData && (
-  <div className="fixed inset-0 bg-black/60 z-50 grid place-items-center p-4">
-    <div className="bg-gray-800 rounded-lg p-4 w-full max-w-md">
-      <div className="flex items-center justify-between mb-2">
-        <div className="font-semibold">Team Details</div>
-        <button className="text-gray-400 hover:text-white" onClick={() => setShowTeamModal(false)}>
-          <X className="h-5 w-5" />
-        </button>
-      </div>
-
-      <div className="space-y-2 text-sm">
-        <div>
-          <span className="text-gray-400">Team:</span> {teamModalData.teamName || '—'}
-        </div>
-        <div>
-          <span className="text-gray-400">Contact:</span> {teamModalData.realName || '—'}
-          {teamModalData.phone ? ` • ${teamModalData.phone}` : ''}
-        </div>
-
-        <div className="mt-2">
-          <div className="text-gray-400 mb-1">Players:</div>
-          <div className="space-y-1">
-            {(teamModalData.players || []).map((pp, idx) => (
-              <div key={pp._id || pp.slot || idx} className="flex justify-between">
-                <div>#{pp.slot ?? (idx + 1)}</div>
-                <div className="flex-1 text-right">
-                  {pp.ignName || '—'}{pp.ignId ? ` (${pp.ignId})` : ''}
-                </div>
-              </div>
-            ))}
-            {(!teamModalData.players || teamModalData.players.length === 0) && (
-              <div className="text-gray-400">No player list</div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-3 flex justify-end">
-        <button className="btn-primary" onClick={() => setShowTeamModal(false)}>Close</button>
-      </div>
-    </div>
-  </div>
-)}
-
-
-
 
                     {selectedGroup && isInSelectedGroup && (
                       <button
@@ -551,7 +628,6 @@ export default function TournamentManage() {
                         <Scissors className="h-4 w-4" />
                       </button>
                     )}
-                    {/* Organizer: remove completely from tournament */}
                     <button
                       type="button"
                       className="text-red-400 hover:text-red-300"
@@ -562,164 +638,119 @@ export default function TournamentManage() {
                     </button>
                   </label>
                 );
-              })
-            ) : (
-              <div className="text-gray-400 text-sm">No registrations yet</div>
-            )}
-          </div>
-
-          {/* Manual create */}
-          <div className="mt-4 border-t border-gray-700 pt-3">
-            <button
-              className="btn-secondary w-full flex items-center justify-center"
-              onClick={() => setManualOpen((v) => !v)}
-            >
-              <Plus className="h-4 w-4 mr-2" /> Create group manually
-            </button>
-
-            {manualOpen && (
-              <div className="mt-3 space-y-2">
-                <input
-                  className="input w-full"
-                  placeholder="Group name (optional)"
-                  value={manualName}
-                  onChange={(e) => setManualName(e.target.value)}
-                />
-                <button className="btn-primary w-full" onClick={createManualGroup}>
-                  Create Group
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* middle: groups list */}
-        <div className="card lg:col-span-1">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="font-semibold">Groups</h2>
-            <div className="flex items-center gap-2">
-              <select
-                className="input"
-                value={moveToGroupId}
-                onChange={(e) => setMoveToGroupId(e.target.value)}
-              >
-                <option value="">Move selected →</option>
-                {groups.map(g => (
-                  <option key={g._id} value={g._id}>{g.name}</option>
-                ))}
-              </select>
-              <button className="btn-secondary" onClick={moveSelectedPlayers} disabled={!moveToGroupId}>
-                Move
-              </button>
+              }) : (
+                <div className="text-gray-400 text-sm">No registrations yet</div>
+              )}
             </div>
-          </div>
-          <div className="space-y-2 max-h-96 overflow-auto">
-            {groups.length ? (
-              groups.map((g) => (
-                <button
-                  key={g._id}
-                  onClick={() => openGroup(g)}
-                  className={`w-full text-left p-3 rounded border ${selectedGroup && String(selectedGroup._id) === String(g._id)
-                    ? 'border-gaming-purple'
-                    : 'border-transparent bg-gray-700 hover:bg-gray-600'
-                    }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="font-medium">{g.name}</div>
-                    <span
-                      role="button"
-                      tabIndex={0}
-                      className="text-gray-300 hover:text-white cursor-pointer"
-                      onClick={(e) => { e.stopPropagation(); openRename(g); }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          openRename(g);
-                        }
-                      }}
-                      title="Rename group"
-                    >
-                      <Edit3 className="h-4 w-4" />
-                    </span>
-                    <button
-                      type="button"
-                      className="text-red-400 hover:text-red-300 ml-2"
-                      title="Delete group"
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        if (!window.confirm('Delete this group? Players will be ungrouped.')) return;
-                        try {
-                          await tournamentsAPI.deleteGroup(id, g._id);
-                          if (selectedGroup && String(selectedGroup._id) === String(g._id)) {
-                            setSelectedGroup(null);
-                            setMessages([]);
-                            setListFilter('all');
-                          }
-                          await load();
-                          toast.success('Group deleted');
-                        } catch (err) {
-                          toast.error(err?.response?.data?.message || 'Delete failed');
-                        }
-                      }}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
+          )}
+        </section>
 
-                  <div className="text-xs text-gray-400">
-                    {(g.memberIds || []).length} players
+        {/* Groups */}
+        <section className="card">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="font-semibold flex items-center gap-2">
+              <Hash className="h-4 w-4" /> Groups
+            </h2>
+          </div>
+
+          <div className="space-y-2 max-h-[36rem] overflow-auto pr-1">
+            {groups.length ? groups.map((g) => {
+              const active = selectedGroup && String(selectedGroup._id) === String(g._id);
+              const mem = (g.memberIds || []).length;
+              const hasRoom = Boolean(g.roomId);
+              return (
+                <div
+                  key={g._id}
+                  className={`rounded border p-3 transition-colors cursor-pointer ${active ? 'border-gaming-purple bg-gaming-purple/10' : 'border-white/10 bg-white/5 hover:bg-white/10'
+                    }`}
+                  onClick={() => openGroup(g)}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <div className="font-medium truncate">{g.name}</div>
+                        {hasRoom && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-[2px] text-[11px] text-emerald-300">
+                            <ShieldCheck className="h-3.5 w-3.5" /> Room
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-xs text-white/60">{mem} players</div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        className="text-white/80 hover:text-white"
+                        title="Rename group"
+                        onClick={(e) => { e.stopPropagation(); openRename(g); }}
+                      >
+                        <Edit3 className="h-4 w-4" />
+                      </button>
+
+                      <button
+                        type="button"
+                        className="text-red-400 hover:text-red-300"
+                        title="Delete group"
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          if (!window.confirm('Delete this group? Players will be ungrouped.')) return;
+                          try {
+                            await tournamentsAPI.deleteGroup(id, g._id);
+                            if (selectedGroup && String(selectedGroup._id) === String(g._id)) {
+                              setSelectedGroup(null); setMessages([]); setListFilter('all');
+                            }
+                            await load();
+                            toast.success('Group deleted');
+                          } catch (err) {
+                            toast.error(err?.response?.data?.message || 'Delete failed');
+                          }
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
                   </div>
-                </button>
-              ))
-            ) : (
+                </div>
+              );
+            }) : (
               <div className="text-gray-400 text-sm">No groups yet</div>
             )}
           </div>
-        </div>
+        </section>
 
-        {/* right: group room */}
-        <div className="card lg:col-span-1">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="font-semibold flex items-center">
-              <MessageSquare className="h-4 w-4 mr-2" />
-              Group Room
+        {/* Room / Chat (sticky) */}
+        <aside className="card lg:sticky lg:top-6 h-fit">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="font-semibold flex items-center gap-2">
+              <MessageSquare className="h-4 w-4" /> Group Room
             </h2>
-
             <div className="flex gap-2">
               <button className="btn-secondary" onClick={createRoomNow} disabled={!selectedGroup}>
                 Ensure Room
               </button>
-
-              <button
-                className="btn-danger"
-                onClick={deleteRoomNow}
-                disabled={!selectedGroup}
-                title="Delete this group's room"
-              >
+              <button className="btn-danger" onClick={deleteRoomNow} disabled={!selectedGroup} title="Delete this group's room">
                 Delete Room
               </button>
-
               <input ref={fileRef} type="file" accept="image/*" onChange={sendImage} className="hidden" />
-              <button
-                className="btn-secondary"
-                onClick={() => fileRef.current?.click()}
-                disabled={!selectedGroup}
-                title="Upload Image"
-              >
+              <button className="btn-secondary" onClick={() => fileRef.current?.click()} disabled={!selectedGroup} title="Upload Image">
                 <Upload className="h-4 w-4" />
               </button>
             </div>
-
           </div>
 
-          <div className="bg-gray-700 rounded p-3 h-72 overflow-auto space-y-2">
-            {visibleMsgs.length ? (
-  visibleMsgs.map((m, i) => (
-    <div key={m._id || i} className="p-2 rounded bg-gray-600">
-                  <div className="text-xs text-gray-300">
+          <div className="rounded bg-white/5 h-80 overflow-auto p-3 space-y-2">
+            {visibleMsgs.length ? visibleMsgs.map((m, i) => {
+              const mine = false; // organizer perspective; adjust if you add sender info
+              return (
+                <div
+                  key={m._id || i}
+                  className={`max-w-[85%] rounded-lg px-3 py-2 ${mine ? 'ml-auto bg-gaming-purple/20' : 'bg-white/10'}`}
+                >
+                  <div className="text-[11px] text-white/60">
                     {m.timestamp ? new Date(m.timestamp).toLocaleString() : ''}
                   </div>
+
                   {editingMsgId === m._id ? (
                     <div className="mt-2 flex gap-2">
                       <input className="input flex-1" value={editText} onChange={(e) => setEditText(e.target.value)} />
@@ -727,35 +758,24 @@ export default function TournamentManage() {
                       <button className="btn-secondary" onClick={cancelEditMsg}>Cancel</button>
                     </div>
                   ) : m.type === 'image' && m.imageUrl ? (
-                    <div>
-                      <div className="text-sm">{m.content}</div>
-                      <img src={m.imageUrl} alt="" className="max-w-full rounded mt-2" />
+                    <div className="mt-1">
+                      {m.content && <div className="text-sm mb-1">{m.content}</div>}
+                      <img src={m.imageUrl} alt="" className="max-w-full rounded" />
                     </div>
                   ) : (
-                    <div className="text-sm whitespace-pre-wrap">{m.content}</div>
+                    <div className="text-sm whitespace-pre-wrap mt-1">{m.content}</div>
                   )}
+
                   {m.type !== 'deleted' && (
-                    <div className="mt-2 flex gap-2 justify-end">
-                      <button
-                        type="button"
-                        className="text-xs text-gray-200 hover:text-white underline"
-                        onClick={() => startEditMsg(m)}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        className="text-xs text-red-300 hover:text-red-200 underline"
-                        onClick={() => deleteMsg(m._id)}
-                      >
-                        Delete
-                      </button>
+                    <div className="mt-2 flex gap-3 justify-end text-xs">
+                      <button className="text-white/80 hover:text-white underline" onClick={() => startEditMsg(m)}>Edit</button>
+                      <button className="text-red-300 hover:text-red-200 underline" onClick={() => deleteMsg(m._id)}>Delete</button>
                     </div>
                   )}
                 </div>
-              ))
-            ) : (
-              <div className="text-gray-400 text-sm">No messages</div>
+              );
+            }) : (
+              <div className="h-full grid place-items-center text-white/50 text-sm">No messages</div>
             )}
           </div>
 
@@ -764,50 +784,102 @@ export default function TournamentManage() {
               value={text}
               onChange={(e) => setText(e.target.value)}
               className="input flex-1"
-              placeholder="Message players..."
+              placeholder={selectedGroup ? `Message ${selectedGroup.name}…` : 'Open a group to chat…'}
             />
             <button className="btn-primary" disabled={!selectedGroup || !text.trim()}>
               <Send className="h-4 w-4" />
             </button>
           </form>
-        </div>
+        </aside>
+      </div>
 
-        {/* Rename Group Modal */}
-        {renameOpen && (
-          <div className="fixed inset-0 bg-black/60 z-50 grid place-items-center p-4">
-            <div className="bg-gray-800 rounded-lg p-4 w-full max-w-md">
-              <div className="font-semibold mb-2">Rename Group</div>
-              <input className="input w-full mb-3" value={renameValue} onChange={e => setRenameValue(e.target.value)} />
-              <div className="flex justify-end gap-2">
-                <button className="btn-secondary" onClick={() => setRenameOpen(false)}>Cancel</button>
-                <button className="btn-primary" onClick={doRename}>Save</button>
-              </div>
+      {/* Team Details Modal */}
+      {showTeamModal && teamModalData && (
+        <div className="fixed inset-0 bg-black/60 z-50 grid place-items-center p-4">
+          <div className="bg-gray-800 rounded-2xl p-5 w-full max-w-md border border-white/10">
+            <div className="flex items-center justify-between mb-3">
+              <div className="font-semibold">Team Details</div>
+              <button className="text-gray-400 hover:text-white" onClick={() => setShowTeamModal(false)}>
+                <X className="h-5 w-5" />
+              </button>
             </div>
-          </div>
-        )}
 
-        {/* Tournament Edit Modal */}
-        {tEditOpen && (
-          <div className="fixed inset-0 bg-black/60 z-50 grid place-items-center p-4">
-            <div className="bg-gray-800 rounded-lg p-4 w-full max-w-lg">
-              <div className="font-semibold mb-3">Edit Tournament</div>
-              <div className="space-y-2">
-                <input className="input w-full" placeholder="Title" value={tForm.title} onChange={e => setTForm({ ...tForm, title: e.target.value })} />
-                <textarea className="input w-full h-24" placeholder="Description" value={tForm.description} onChange={e => setTForm({ ...tForm, description: e.target.value })} />
-                <div className="grid grid-cols-2 gap-2">
-                  <input className="input" type="number" placeholder="Price" value={tForm.price} onChange={e => setTForm({ ...tForm, price: e.target.value })} />
-                  <input className="input" type="number" placeholder="Capacity" value={tForm.capacity} onChange={e => setTForm({ ...tForm, capacity: e.target.value })} />
+            <div className="space-y-2 text-sm">
+              <div><span className="text-white/60">Team:</span> {teamModalData.teamName || '—'}</div>
+              <div>
+                <span className="text-white/60">Contact:</span> {teamModalData.realName || '—'}
+                {teamModalData.phone ? ` • ${teamModalData.phone}` : ''}
+              </div>
+
+              <div className="mt-2">
+                <div className="text-white/60 mb-1">Players:</div>
+                <div className="space-y-1">
+                  {(teamModalData.players || []).map((pp, idx) => (
+                    <div key={pp._id || pp.slot || idx} className="flex justify-between">
+                      <div>#{pp.slot ?? (idx + 1)}</div>
+                      <div className="flex-1 text-right">
+                        {pp.ignName || '—'}{pp.ignId ? ` (${pp.ignId})` : ''}
+                      </div>
+                    </div>
+                  ))}
+                  {(!teamModalData.players || teamModalData.players.length === 0) && (
+                    <div className="text-white/60">No player list</div>
+                  )}
                 </div>
               </div>
-              <div className="flex justify-end gap-2 mt-3">
-                <button className="btn-secondary" onClick={() => setTEditOpen(false)}>Cancel</button>
-                <button className="btn-primary" onClick={saveTournament}>Save</button>
-              </div>
+            </div>
+
+            <div className="mt-3 flex justify-end">
+              <button className="btn-primary" onClick={() => setShowTeamModal(false)}>Close</button>
             </div>
           </div>
-        )}
+        </div>
+      )}
 
-      </div>
+      {/* Rename Group Modal */}
+      {renameOpen && (
+        <div className="fixed inset-0 bg-black/60 z-50 grid place-items-center p-4">
+          <div className="bg-gray-800 rounded-2xl p-5 w-full max-w-md border border-white/10">
+            <div className="flex items-center justify-between mb-3">
+              <div className="font-semibold">Rename Group</div>
+              <button className="text-gray-400 hover:text-white" onClick={() => setRenameOpen(false)}>
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <input className="input w-full mb-3" value={renameValue} onChange={e => setRenameValue(e.target.value)} />
+            <div className="flex justify-end gap-2">
+              <button className="btn-secondary" onClick={() => setRenameOpen(false)}>Cancel</button>
+              <button className="btn-primary" onClick={doRename}>Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tournament Edit Modal */}
+      {tEditOpen && (
+        <div className="fixed inset-0 bg-black/60 z-50 grid place-items-center p-4">
+          <div className="bg-gray-800 rounded-2xl p-5 w-full max-w-lg border border-white/10">
+            <div className="flex items-center justify-between mb-3">
+              <div className="font-semibold">Edit Tournament</div>
+              <button className="text-gray-400 hover:text-white" onClick={() => setTEditOpen(false)}>
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="space-y-2">
+              <input className="input w-full" placeholder="Title" value={tForm.title} onChange={e => setTForm({ ...tForm, title: e.target.value })} />
+              <textarea className="input w-full h-24" placeholder="Description" value={tForm.description} onChange={e => setTForm({ ...tForm, description: e.target.value })} />
+              <div className="grid grid-cols-2 gap-2">
+                <input className="input" type="number" placeholder="Price" value={tForm.price} onChange={e => setTForm({ ...tForm, price: e.target.value })} />
+                <input className="input" type="number" placeholder="Capacity" value={tForm.capacity} onChange={e => setTForm({ ...tForm, capacity: e.target.value })} />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-3">
+              <button className="btn-secondary" onClick={() => setTEditOpen(false)}>Cancel</button>
+              <button className="btn-primary" onClick={saveTournament}>Save</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

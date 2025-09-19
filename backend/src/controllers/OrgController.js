@@ -8,46 +8,112 @@ import cloudinary from "../utils/cloudinary.js";
 /**
  * GET /api/organizations/rankings
  */
+// controllers/OrgController.js
 export const getOrgRankings = async (req, res) => {
   try {
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.max(1, Math.min(50, parseInt(req.query.limit) || 10));
     const skip = (page - 1) * limit;
 
-    const [items, total] = await Promise.all([
-      User.find({ role: 'organization' })
-        .select('name avatarUrl organizationInfo createdAt')
-        .sort({ 'organizationInfo.ranking': -1 })
-        .skip(skip)
-        .limit(limit)
-        .lean(),
-      User.countDocuments({ role: 'organization' })
-    ]);
+    const pipeline = [
+      { $match: { role: 'organization' } },
 
-    const orgIds = items.map(o => o._id);
-    const counts = await Scrim.aggregate([
-      { $match: { createdBy: { $in: orgIds } } },
-      { $group: { _id: '$createdBy', count: { $sum: 1 } } }
-    ]);
-    const mapCounts = counts.reduce((m, c) => (m[c._id.toString()] = c.count, m), {});
+      // Ratings aggregate per org
+      {
+        $lookup: {
+          from: 'orgratings',
+          let: { orgId: '$_id' },
+          pipeline: [
+            { $match: { $expr: { $eq: ['$organizationId', '$$orgId'] } } },
+            {
+              $group: {
+                _id: '$organizationId',
+                averageRating: { $avg: '$rating' },
+                totalRatings: { $sum: 1 },
+                orgAvg: { $avg: '$categories.organization' },
+                commAvg: { $avg: '$categories.communication' },
+                fairAvg: { $avg: '$categories.fairness' },
+                expAvg: { $avg: '$categories.experience' },
+              }
+            }
+          ],
+          as: 'ratingAgg'
+        }
+      },
 
-    const organizations = items.map(o => ({
-      _id: o._id,
-      name: o.name,
-      avatarUrl: o.avatarUrl,
-      organizationInfo: o.organizationInfo || {},
-      scrimCount: mapCounts[o._id.toString()] || 0,
-      averageRating: 0,
-      totalRatings: 0,
-      categoryAverages: { organization: 0, communication: 0, fairness: 0, experience: 0 },
-    }));
+      // Scrim count for each org
+      {
+        $lookup: {
+          from: 'scrims',
+          localField: '_id',
+          foreignField: 'createdBy',
+          as: 'scrims'
+        }
+      },
 
-    res.json({ items: organizations, totalPages: Math.ceil(total / limit) });
+      // Flatten + default zeros
+      {
+        $addFields: {
+          averageRating: { $ifNull: [{ $arrayElemAt: ['$ratingAgg.averageRating', 0] }, 0] },
+          totalRatings: { $ifNull: [{ $arrayElemAt: ['$ratingAgg.totalRatings', 0] }, 0] },
+          categoryAverages: {
+            organization: { $ifNull: [{ $arrayElemAt: ['$ratingAgg.orgAvg', 0] }, 0] },
+            communication: { $ifNull: [{ $arrayElemAt: ['$ratingAgg.commAvg', 0] }, 0] },
+            fairness: { $ifNull: [{ $arrayElemAt: ['$ratingAgg.fairAvg', 0] }, 0] },
+            experience: { $ifNull: [{ $arrayElemAt: ['$ratingAgg.expAvg', 0] }, 0] },
+          },
+          scrimCount: { $size: { $ifNull: ['$scrims', []] } }
+        }
+      },
+
+      // Keep only needed fields
+      {
+        $project: {
+          _id: 1,
+          name: 1,
+          avatarUrl: 1,
+          organizationInfo: 1,
+          createdAt: 1,
+          averageRating: 1,
+          totalRatings: 1,
+          categoryAverages: 1,
+          scrimCount: 1,
+        }
+      },
+
+      // True "ranking" sort
+      {
+        $sort: {
+          averageRating: -1,
+          totalRatings: -1,
+          scrimCount: -1,
+          createdAt: -1
+        }
+      },
+
+      // Pagination + total count in one go
+      {
+        $facet: {
+          items: [{ $skip: skip }, { $limit: limit }],
+          total: [{ $count: 'count' }]
+        }
+      }
+    ];
+
+    const result = await mongoose.model('User').aggregate(pipeline);
+    const items = result?.[0]?.items || [];
+    const totalCount = result?.[0]?.total?.[0]?.count || 0;
+
+    return res.json({
+      items,
+      totalPages: Math.max(1, Math.ceil(totalCount / limit))
+    });
   } catch (e) {
     console.error('getOrgRankings error:', e);
     res.status(500).json({ message: 'Failed to load rankings' });
   }
 };
+
 
 /**
  * GET /api/organizations/:orgId

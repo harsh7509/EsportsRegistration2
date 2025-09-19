@@ -2,19 +2,30 @@ import User from "../models/User.js";
 import cloudinary from "../utils/cloudinary.js"; // agar aapka export `cloudinary.js` root me hai to path adjust karein
 // NOTE: aapke repo me `cloudinary.js` hai — jahan se configured instance export hota ho, wahi import karo.
 
-const uploadToCloud = (filePath, folder = "org-kyc") =>
+const uploadBufferToCloudinary = (buffer, folder = "org-kyc") =>
   new Promise((resolve, reject) => {
-    cloudinary.uploader.upload(
-      filePath,
+    const stream = cloudinary.uploader.upload_stream(
       { folder, resource_type: "image" },
       (err, result) => (err ? reject(err) : resolve(result))
     );
+    stream.end(buffer);
   });
+
+
+
+export const myOrgKyc = async (req, res) => {
+  const me = await User.findById(req.user._id).select("orgKyc role");
+  if (!me || !["organization", "org"].includes(me.role)) {
+    return res.status(403).json({ message: "Only organization owners can view KYC" });
+  }
+  const verified = !!me?.orgKyc && me.orgKyc.status === "approved";
+  res.json({ orgKyc: me.orgKyc || null, verified });
+};
 
 export const submitOrgKyc = async (req, res) => {
   try {
     const me = await User.findById(req.user._id);
-    if (!me || me.role !== "organization") {
+    if (!me || !["organization", "org"].includes(me.role)) {
       return res.status(403).json({ message: "Only organization owners can submit KYC" });
     }
 
@@ -22,17 +33,34 @@ export const submitOrgKyc = async (req, res) => {
     if (!legalName || !email || !dob || !aadhaarNumber) {
       return res.status(400).json({ message: "All fields are required" });
     }
+    if (!/^\d{12}$/.test(String(aadhaarNumber))) {
+      return res.status(400).json({ message: "Aadhaar must be 12 digits" });
+    }
+    // date must be in past
+    if (new Date(dob) > new Date()) {
+      return res.status(400).json({ message: "DOB must be in the past" });
+    }
 
-    // files from multer fields
     const aadhaarFile = req.files?.aadhaarImage?.[0];
-    const selfieFile = req.files?.selfieImage?.[0];
+    const selfieFile  = req.files?.selfieImage?.[0];
     if (!aadhaarFile || !selfieFile) {
       return res.status(400).json({ message: "Aadhaar image & Selfie with Aadhaar are required" });
     }
 
+    // memoryStorage gives buffer (NOT path)
+    if (!aadhaarFile.buffer || !selfieFile.buffer) {
+      return res.status(400).json({ message: "Invalid file upload (no buffer)" });
+    }
+
+    // Optional: basic mime checks
+    const ok = (f) => f.mimetype && f.mimetype.startsWith("image/");
+    if (!ok(aadhaarFile) || !ok(selfieFile)) {
+      return res.status(400).json({ message: "Only image files are allowed" });
+    }
+
     const [aadhaarUpload, selfieUpload] = await Promise.all([
-      uploadToCloud(aadhaarFile.path, "org-kyc"),
-      uploadToCloud(selfieFile.path, "org-kyc"),
+      uploadBufferToCloudinary(aadhaarFile.buffer, "org-kyc"),
+      uploadBufferToCloudinary(selfieFile.buffer, "org-kyc"),
     ]);
 
     me.orgKyc = {
@@ -40,7 +68,7 @@ export const submitOrgKyc = async (req, res) => {
       legalName,
       email,
       dob: new Date(dob),
-      aadhaarNumber, // UI me mask karo
+      aadhaarNumber,
       aadhaarImageUrl: aadhaarUpload.secure_url,
       selfieWithAadhaarUrl: selfieUpload.secure_url,
       notes: "",
@@ -52,17 +80,6 @@ export const submitOrgKyc = async (req, res) => {
   } catch (e) {
     console.error("submitOrgKyc error:", e);
     return res.status(500).json({ message: "Failed to submit KYC" });
-  }
-};
-
-export const myOrgKyc = async (req, res) => {
-  try {
-    const me = await User.findById(req.user._id).select("orgKyc organizationInfo").lean();
-    if (!me) return res.status(404).json({ message: "User not found" });
-    return res.json({ orgKyc: me.orgKyc, verified: !!me.organizationInfo?.verified });
-  } catch (e) {
-    console.error("myOrgKyc error:", e);
-    return res.status(500).json({ message: "Failed to load KYC" });
   }
 };
 
