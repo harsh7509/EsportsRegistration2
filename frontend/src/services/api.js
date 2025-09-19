@@ -1,11 +1,14 @@
 import axios from 'axios';
 
-const API_BASE_URL = '/api'; // ⬅ keep everything on the same base (works with your Vite proxy/dev server)
+const API_BASE_URL = '/'; // ⬅ keep everything on the same base (works with your Vite proxy/dev server)
+const ORIGIN =
+  import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, "") || "http://localhost:4000";
 
 // Create axios instance
-const api = axios.create({
-  baseURL: '/api', // ⬅ unchanged from your working setup
-  
+export const api = axios.create({
+  baseURL: `${ORIGIN}/api`,
+  withCredentials: true, // cookies लगानी हों तो true रखो
+  headers: { "Content-Type": "application/json" },
 });
 
 // Token management
