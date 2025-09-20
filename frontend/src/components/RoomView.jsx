@@ -2,6 +2,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { MessageSquare, Send, Lock, Upload } from 'lucide-react';
 import { scrimsAPI, uploadAPI } from '../services/api';
+import { NormalizeImageUrl } from '../utils/img.js';
+
 import toast from 'react-hot-toast';
 
 const RolePill = ({ role }) => {
@@ -175,7 +177,7 @@ const RoomView = ({ scrimId, isOwner }) => {
                             <p className="mb-2 text-slate-200/90">{message.content}</p>
                           )}
                           <img
-                            src={message.imageUrl}
+                            src={normalizeImageUrl(message.imageUrl)}
                             alt="Shared"
                             className="max-h-56 max-w-full rounded-xl border border-white/10 cursor-zoom-in hover:opacity-95 transition"
                             onClick={() => window.open(message.imageUrl, '_blank')}

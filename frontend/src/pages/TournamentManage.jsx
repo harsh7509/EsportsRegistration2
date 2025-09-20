@@ -7,6 +7,7 @@ import {
   Search, ChevronDown, Hash, ShieldCheck, Layers, Grid, Wand2, AlertTriangle
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { NormalizeImageUrl } from '../utils/img';
 import { useAuth } from '../context/AuthContext';
 
 export default function TournamentManage() {
@@ -597,7 +598,7 @@ export default function TournamentManage() {
                         disabled={deleted}
                       />
                       {uObj?.avatarUrl ? (
-                        <img src={uObj.avatarUrl} alt="" className="h-8 w-8 rounded-full object-cover" />
+                        <img src={NormalizeImageUrl(uObj.avatarUrl)} alt="" className="h-8 w-8 rounded-full object-cover" />
                       ) : (
                         <div className="h-8 w-8 rounded-full bg-gray-600 grid place-items-center">
                           <span className="text-xs">{(uObj?.name?.[0] || 'P').toUpperCase()}</span>
@@ -673,7 +674,7 @@ export default function TournamentManage() {
                       disabled={deleted}
                     />
                     {uObj?.avatarUrl ? (
-                      <img src={uObj.avatarUrl} alt="" className="h-8 w-8 rounded-full object-cover" />
+                      <img src={NormalizeImageUrl(uObj.avatarUrl)} alt="" className="h-8 w-8 rounded-full object-cover" />
                     ) : (
                       <div className="h-8 w-8 rounded-full bg-gray-600 grid place-items-center">
                         <span className="text-xs">{(uObj?.name?.[0] || 'P').toUpperCase()}</span>
@@ -843,7 +844,7 @@ export default function TournamentManage() {
                   ) : m.type === 'image' && m.imageUrl ? (
                     <div className="mt-1">
                       {m.content && <div className="text-sm mb-1">{m.content}</div>}
-                      <img src={m.imageUrl} alt="" className="max-w-full rounded" />
+                      <img src={NormalizeImageUrl(m.imageUrl)} alt="" className="max-w-full rounded" />
                     </div>
                   ) : (
                     <div className="text-sm whitespace-pre-wrap mt-1">{m.content}</div>
