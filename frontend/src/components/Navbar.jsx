@@ -65,7 +65,7 @@ const Navbar = () => {
               <Gamepad2 className="relative h-8 w-8 text-gaming-purple" />
             </div>
             <span className="text-xl font-bold bg-gradient-to-r from-white via-gaming-purple to-gaming-cyan bg-clip-text text-transparent">
-              EsportsPro
+              Arena Pulse
             </span>
           </Link>
 
@@ -248,7 +248,7 @@ const Navbar = () => {
           <div className="flex items-center justify-between px-4 h-16 border-b border-gray-800">
             <div className="flex items-center gap-2">
               <Gamepad2 className="h-6 w-6 text-gaming-purple" />
-              <span className="font-semibold">EsportsPro</span>
+              <span className="font-semibold">Arena Pulse</span>
             </div>
             <button className="p-2 rounded-lg hover:bg-gray-800" onClick={() => setMobileOpen(false)} aria-label="Close menu">
               <XIcon className="h-5 w-5 text-gray-300" />

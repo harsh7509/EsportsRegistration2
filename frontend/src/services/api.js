@@ -1,11 +1,17 @@
 import axios from 'axios';
 
-const API_BASE_URL = '/api'; // ⬅ keep everything on the same base (works with your Vite proxy/dev server)
+
+export const ORIGIN =
+  (import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000').replace(/\/+$/, '');
+
+  
+export const API_BASE = `${ORIGIN}/api`;
 
 // Create axios instance
-const api = axios.create({
-  baseURL: '/api', // ⬅ unchanged from your working setup
-  
+export const api = axios.create({
+  baseURL: API_BASE,            // ✅ अब हमेशा https://render-backend/api
+  withCredentials: true,
+  headers: { 'Content-Type': 'application/json' },
 });
 
 // Token management
@@ -22,10 +28,6 @@ const getRefreshToken = () => localStorage.getItem(REFRESH_KEY);
   api.defaults.headers.common.Authorization = `Bearer ${access}`;
 };
 
-// Profile API (player's own data)
-export const profileAPI = {
-  myBookings: () => api.get('/profile/bookings'),
-};
 
 const clearTokens = () => {
   localStorage.removeItem(ACCESS_KEY);
@@ -61,8 +63,9 @@ api.interceptors.response.use(
 
         // Use axios (NOT the api instance) so we don't run into interceptor recursion.
         // Keep base consistent: '/api' (same origin) to avoid CORS/port mismatches.
-        const response = await axios.post(`${API_BASE_URL}/auth/refresh`, { refreshToken }, {
+        const resp = await axios.post(`${API_BASE}/auth/refresh`, { refreshToken }, {
           headers: { 'Content-Type': 'application/json' },
+          withCredentials: true,
         });
 
         // Accept multiple token key names from backend
@@ -97,6 +100,12 @@ api.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
+// Profile API (player's own data)
+export const profileAPI = {
+  myBookings: () => api.get('/profile/bookings'),
+};
+
 
 // Auth API
 export const authAPI = {
