@@ -17,11 +17,9 @@ import { organizationsAPI } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 
 /**
- * VerifyOrg — polished UI
- * - Progress meter & step chips
- * - Inline Aadhaar formatting/validation
- * - Drag & drop image upload with type/size validation
- * - Sticky tips on desktop, compact on mobile
+ * VerifyOrg — polished UI w/ verified lock
+ * - If org is already verified, the form is read-only and submit is disabled
+ * - Better status ribbon + small visual refinements
  */
 export default function VerifyOrg() {
   const navigate = useNavigate();
@@ -75,6 +73,9 @@ export default function VerifyOrg() {
   }, []);
 
   // Derived
+  const isApproved = verified || status === "approved";
+  const isPending = status === "pending";
+
   const aadhaarDigits = aadhaar.replace(/\D/g, "").slice(0, 12);
   const aadhaarValid = /^\d{12}$/.test(aadhaarDigits);
   const aadhaarPretty = aadhaarDigits.replace(/(\d{4})(\d{0,4})(\d{0,4})/, (_, a, b, c) =>
@@ -102,8 +103,9 @@ export default function VerifyOrg() {
       aadhaarImage &&
       selfieImage &&
       consent;
-    return Boolean(all) && status !== "pending" && status !== "approved";
-  }, [legalName, email, dob, aadhaarValid, aadhaarImage, selfieImage, consent, status]);
+    // Disable if already verified OR pending review
+    return Boolean(all) && !isApproved && !isPending;
+  }, [legalName, email, dob, aadhaarValid, aadhaarImage, selfieImage, consent, isApproved, isPending]);
 
   const validate = () => {
     const next = {};
@@ -153,6 +155,15 @@ export default function VerifyOrg() {
   }
 
   const progress = Math.round((stepCount / 7) * 100);
+  const submitLabel = isApproved
+    ? "Organization already verified"
+    : isPending
+    ? "Under review…"
+    : submitting
+    ? "Submitting…"
+    : "Submit for review";
+
+  const formDisabled = isApproved || isPending;
 
   return (
     <Page>
@@ -165,13 +176,33 @@ export default function VerifyOrg() {
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
-        <div>
+        <div className="flex items-center gap-3">
           <h1 className="text-2xl md:text-3xl font-bold">Verify your organization</h1>
-          <p className="text-gray-400">
-            Submit KYC to get a verified badge and unlock organizer tools.
-          </p>
+          {isApproved && (
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/15 text-emerald-300 border border-emerald-700/40">
+              <ShieldCheck className="w-4 h-4" />
+              Verified
+            </span>
+          )}
         </div>
       </div>
+
+      {/* Success ribbon when verified */}
+      {isApproved && (
+        <div className="mb-6 rounded-2xl border border-emerald-700/40 bg-emerald-500/10 p-4">
+          <div className="flex items-start gap-3 text-emerald-200">
+            <div className="p-2 rounded-xl bg-emerald-500/20 border border-emerald-500/30">
+              <ShieldCheck className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="font-semibold">You’re verified 🎉</div>
+              <div className="text-sm opacity-90">
+                Your organizer tools are fully unlocked. The form below is now read-only.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Status strip */}
       <StatusStrip status={status} verified={verified} />
@@ -184,7 +215,11 @@ export default function VerifyOrg() {
         </div>
         <div className="h-2 rounded-full bg-gray-800 overflow-hidden">
           <div
-            className="h-full bg-gradient-to-r from-gaming-purple to-gaming-cyan transition-[width] duration-300"
+            className={`h-full transition-[width] duration-300 ${
+              isApproved
+                ? "bg-gradient-to-r from-emerald-400 to-emerald-600"
+                : "bg-gradient-to-r from-gaming-purple to-gaming-cyan"
+            }`}
             style={{ width: `${progress}%` }}
           />
         </div>
@@ -203,7 +238,7 @@ export default function VerifyOrg() {
         {/* Left column: form */}
         <div className="lg:col-span-2">
           <Card>
-            <form onSubmit={onSubmit} className="space-y-6">
+            <form onSubmit={onSubmit} className={`space-y-6 ${formDisabled ? "opacity-80" : ""}`}>
               <SectionHeader icon={<ShieldCheck className="w-5 h-5" />}>
                 Organization owner details
               </SectionHeader>
@@ -219,6 +254,7 @@ export default function VerifyOrg() {
                   }}
                   required
                   error={errors.legalName}
+                  disabled={formDisabled}
                 />
                 <TextInput
                   label="Email"
@@ -231,6 +267,7 @@ export default function VerifyOrg() {
                   }}
                   required
                   error={errors.email}
+                  disabled={formDisabled}
                 />
                 <TextInput
                   label="Date of birth"
@@ -242,23 +279,24 @@ export default function VerifyOrg() {
                   }}
                   required
                   error={errors.dob}
+                  disabled={formDisabled}
                 />
                 <TextInput
                   label="Aadhaar number"
                   placeholder="XXXX XXXX XXXX"
                   value={aadhaarPretty}
                   onChange={(v) => {
-                    // accept digits only; format to pretty view
                     const digits = v.replace(/\D/g, "").slice(0, 12);
                     setAadhaar(digits);
                     setErrors((e) => ({ ...e, aadhaar: undefined }));
                   }}
                   inputMode="numeric"
-                  maxLength={14} // includes spaces in pretty string
+                  maxLength={14}
                   hint={aadhaarValid ? "Looks good." : "12 digits required."}
                   status={aadhaarValid ? "ok" : "warn"}
                   required
                   error={errors.aadhaar}
+                  disabled={formDisabled}
                 />
               </div>
 
@@ -285,6 +323,7 @@ export default function VerifyOrg() {
                     "Ensure all details are readable",
                   ]}
                   error={errors.aadhaarImage}
+                  disabled={formDisabled}
                 />
                 <DropZone
                   label="Selfie holding Aadhaar"
@@ -302,6 +341,7 @@ export default function VerifyOrg() {
                     "Avoid glare and blur",
                   ]}
                   error={errors.selfieImage}
+                  disabled={formDisabled}
                 />
               </div>
 
@@ -323,6 +363,7 @@ export default function VerifyOrg() {
                     setConsent(e.target.checked);
                     setErrors((er) => ({ ...er, consent: undefined }));
                   }}
+                  disabled={formDisabled}
                 />
                 <span className="text-sm text-gray-300">
                   I confirm the above details are correct and I consent to verification.
@@ -338,19 +379,22 @@ export default function VerifyOrg() {
                   onClick={() => navigate(-1)}
                   className="btn-secondary"
                 >
-                  Cancel
+                  {isApproved ? "Close" : "Cancel"}
                 </button>
                 <button
                   type="submit"
-                  disabled={!canSubmit || submitting}
-                  className="btn-primary inline-flex items-center justify-center"
+                  disabled={!canSubmit}
+                  className={`btn-primary inline-flex items-center justify-center ${
+                    (!canSubmit || isApproved || isPending) ? "opacity-70 cursor-not-allowed" : ""
+                  }`}
+                  title={isApproved ? "Your organization is already verified" : isPending ? "Your submission is under review" : "Submit for review"}
                 >
-                  {submitting ? (
+                  {submitting && !isApproved && !isPending ? (
                     <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Submitting…
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" /> {submitLabel}
                     </>
                   ) : (
-                    "Submit for review"
+                    submitLabel
                   )}
                 </button>
               </div>
@@ -440,6 +484,7 @@ function TextInput({
   maxLength,
   status, // "ok" | "warn"
   error,
+  disabled,
 }) {
   const ring =
     error
@@ -455,7 +500,7 @@ function TextInput({
         {required && <span className="text-red-400"> *</span>}
       </label>
       <input
-        className={`input w-full ${ring}`}
+        className={`input w-full ${ring} ${disabled ? "opacity-70 cursor-not-allowed" : ""}`}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         type={type}
@@ -463,6 +508,7 @@ function TextInput({
         inputMode={inputMode}
         maxLength={maxLength}
         required={required}
+        disabled={disabled}
       />
       {error ? (
         <p className="text-xs text-red-400 mt-1">{error}</p>
@@ -479,12 +525,13 @@ function TextInput({
   );
 }
 
-function DropZone({ label, file, preview, onFile, tips = [], error }) {
+function DropZone({ label, file, preview, onFile, tips = [], error, disabled }) {
   const inputRef = useRef(null);
   const [dragOver, setDragOver] = useState(false);
 
   const onDrop = (e) => {
     e.preventDefault();
+    if (disabled) return;
     setDragOver(false);
     const f = e.dataTransfer.files?.[0];
     if (f) onFile(f);
@@ -498,19 +545,20 @@ function DropZone({ label, file, preview, onFile, tips = [], error }) {
       <div
         onDragOver={(e) => {
           e.preventDefault();
-          setDragOver(true);
+          if (!disabled) setDragOver(true);
         }}
         onDragLeave={() => setDragOver(false)}
         onDrop={onDrop}
         className={[
-          "rounded-2xl border-2 border-dashed p-4 transition-colors cursor-pointer",
+          "rounded-2xl border-2 border-dashed p-4 transition-colors",
+          disabled ? "opacity-60 cursor-not-allowed" : "cursor-pointer",
           dragOver
             ? "border-gaming-purple bg-gaming-purple/10"
             : "border-gray-700 hover:border-gray-600",
           error ? "border-red-500/60" : "",
         ].join(" ")}
-        onClick={() => inputRef.current?.click()}
-        title="Click or drag-and-drop"
+        onClick={() => !disabled && inputRef.current?.click()}
+        title={disabled ? "Form is read-only" : "Click or drag-and-drop"}
       >
         {!file ? (
           <div className="flex items-center gap-3">
@@ -518,9 +566,9 @@ function DropZone({ label, file, preview, onFile, tips = [], error }) {
               <UploadCloud className="w-5 h-5" />
             </div>
             <div>
-              <div className="font-medium">Click to upload</div>
+              <div className="font-medium">{disabled ? "Uploads disabled" : "Click to upload"}</div>
               <div className="text-sm text-gray-400">
-                or drag and drop an image file (JPG/PNG, ≤ 5MB)
+                {disabled ? "Already verified / under review" : "or drag and drop an image file (JPG/PNG/WEBP, ≤ 5MB)"}
               </div>
             </div>
           </div>
@@ -538,16 +586,18 @@ function DropZone({ label, file, preview, onFile, tips = [], error }) {
               <div className="text-xs text-gray-500">
                 {Math.round(file.size / 1024)} KB
               </div>
-              <button
-                type="button"
-                className="text-xs text-red-300 hover:text-red-200"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onFile(null);
-                }}
-              >
-                Remove
-              </button>
+              {!disabled && (
+                <button
+                  type="button"
+                  className="text-xs text-red-300 hover:text-red-200"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onFile(null);
+                  }}
+                >
+                  Remove
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -557,6 +607,7 @@ function DropZone({ label, file, preview, onFile, tips = [], error }) {
           accept="image/*"
           className="hidden"
           onChange={(e) => onFile(e.target.files?.[0] || null)}
+          disabled={disabled}
         />
       </div>
       {error ? (
@@ -593,12 +644,12 @@ function StatusStrip({ status, verified }) {
   if (status === "approved")
     node = chip(
       "Approved",
-      "bg-emerald-500/15 text-emerald-300 border border-emerald-700/40"
+      "bg-emerald-500/15 text-emerald-300 border-emerald-700/40"
     );
   if (status === "rejected")
     node = chip(
       "Rejected — edit & resubmit",
-      "bg-red-500/15 text-red-300 border border-red-700/40"
+      "bg-red-500/15 text-red-300 border-red-700/40"
     );
 
   return (

@@ -1,15 +1,17 @@
 // src/pages/TournamentDetails.jsx
 import React, { useEffect, useMemo, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import {
   Calendar, Users, Trophy, MapPin, ExternalLink, ArrowLeft, Share2, ShieldCheck, Info, ClipboardCopy, Edit3, Gift
 } from 'lucide-react';
 import { tournamentsAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { NormalizeImageUrl } from '../utils/img';
+import PlayerGroupRoomModal from '../components/PlayerGroupRoomModal';
 import toast from 'react-hot-toast';
 
 const emptyPlayer = () => ({ ignName: '', ignId: '' });
+
 
 const Badge = ({ children, className = '' }) => (
   <span className={`inline-flex items-center rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-xs font-medium text-white/90 backdrop-blur ${className}`}>
@@ -156,6 +158,7 @@ const PrizePool = ({ tournament, compact = false }) => {
 
 const TournamentDetails = () => {
   const { id } = useParams();
+  const navigate = useNavigate();
   const { user } = useAuth();
 
   const [t, setT] = useState(null);
@@ -170,6 +173,11 @@ const TournamentDetails = () => {
 
   const [activeTab, setActiveTab] = useState('about'); // about | rules | prizes
   const [localRegistered, setLocalRegistered] = useState(false); // flips true after successful register
+
+  // NEW: my group/room state
+  const [myGroup, setMyGroup] = useState(null); // { _id, number?, roomId? }
+  const [groupStatusChecked, setGroupStatusChecked] = useState(false); // to control UI once check finishes
+  const [roomOpen, setRoomOpen] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -234,6 +242,121 @@ const TournamentDetails = () => {
 
     return inParticipants || inRegistrations;
   }, [t, user, localRegistered]);
+
+  // ---------- Try to detect user's group/room once tournament + user ready ----------
+  useEffect(() => {
+    const tryFindMyGroup = async () => {
+      if (!user || !t) return;
+      const uid = user._id || user.id;
+      try {
+        // 1) Preferred: dedicated endpoint if available
+        if (typeof tournamentsAPI.myGroup === 'function') {
+          const r = await tournamentsAPI.myGroup(t._id || id);
+          const g = r?.data?.group || r?.data || null;
+          if (g) {
+            setMyGroup(g);
+            return;
+          }
+        }
+
+        // 2) Fallback: fetch groups list and search membership
+        if (typeof tournamentsAPI.listGroups === 'function') {
+          const r = await tournamentsAPI.listGroups(t._id || id);
+          const groups = r?.data?.groups || r?.groups || r?.data || [];
+          if (Array.isArray(groups) && groups.length) {
+            const found = groups.find((g, idx) => {
+              const number = g.number ?? g.index ?? (typeof g.name === 'string' && g.name.match(/\d+/)?.[0]) ?? (idx + 1);
+
+              // accept many membership shapes
+              const memberIds = g.memberIds || g.membersIds || g.participantIds || g.userIds || [];
+              const membersArr = Array.isArray(memberIds) ? memberIds : [];
+
+              const hasId = membersArr.some(m =>
+                (m?._id || m?.userId || m?.id || m) === uid
+              );
+
+              const hasObj = Array.isArray(g.members)
+                ? g.members.some(m => (m?.userId?._id || m?.user?._id || m?.userId || m?._id || m) === uid)
+                : false;
+
+              const hasParticipants = Array.isArray(g.participants)
+                ? g.participants.some(m => (m?.userId?._id || m?.user?._id || m?.userId || m?._id || m) === uid)
+                : false;
+
+              // attach number for UI convenience
+              if ((hasId || hasObj || hasParticipants) && number != null) g.__number = Number(number);
+              return hasId || hasObj || hasParticipants;
+            });
+
+            if (found) {
+              setMyGroup(found);
+              return;
+            }
+          }
+        }
+
+        // 3) Last fallback: if groups bundled inside tournament object
+        if (Array.isArray(t.groups) && t.groups.length) {
+          const f = t.groups.find((g, idx) => {
+            const number = g.number ?? g.index ?? (typeof g.name === 'string' && g.name.match(/\d+/)?.[0]) ?? (idx + 1);
+            const memberIds = g.memberIds || g.membersIds || g.participantIds || g.userIds || [];
+            const hasId = (Array.isArray(memberIds) ? memberIds : []).some(m =>
+              (m?._id || m?.userId || m?.id || m) === uid
+            );
+            const hasObj = Array.isArray(g.members)
+              ? g.members.some(m => (m?.userId?._id || m?.user?._id || m?.userId || m?._id || m) === uid)
+              : false;
+            const hasParticipants = Array.isArray(g.participants)
+              ? g.participants.some(m => (m?.userId?._id || m?.user?._id || m?.userId || m?._id || m) === uid)
+              : false;
+
+            if ((hasId || hasObj || hasParticipants) && number != null) g.__number = Number(number);
+            return hasId || hasObj || hasParticipants;
+          });
+          if (f) setMyGroup(f);
+        }
+      } catch (err) {
+        console.warn('myGroup lookup failed (non-fatal):', err);
+      } finally {
+        setGroupStatusChecked(true);
+      }
+    };
+
+    if (isRegistered) {
+      tryFindMyGroup();
+    } else {
+      // if not registered, still mark status checked to avoid indefinite "checking..."
+      setGroupStatusChecked(true);
+    }
+  }, [isRegistered, t, id, user]);
+
+  const myGroupNumber = useMemo(() => {
+    if (!myGroup) return null;
+    if (typeof myGroup.__number === 'number') return myGroup.__number;
+    if (typeof myGroup.number === 'number') return myGroup.number;
+    if (typeof myGroup.index === 'number') return myGroup.index + 1;
+    if (typeof myGroup.name === 'string') {
+      const m = myGroup.name.match(/\d+/);
+      if (m) return Number(m[0]);
+    }
+    return null;
+  }, [myGroup]);
+
+  const goToMyGroup = () => {
+    if (!myGroup) return;
+    const gid = myGroup._id || myGroup.id || null;
+    const roomId = myGroup.roomId || myGroup.room?.id || myGroup.room?._id || null;
+
+    if (roomId) {
+      navigate(`/rooms/${roomId}`);
+      return;
+    }
+    if (gid) {
+      navigate(`/tournaments/${t?._id || id}/groups/${gid}`);
+      return;
+    }
+    toast.error('Group view not available');
+  };
 
   const onPlayerChange = (idx, next) => {
     setPlayers((prev) => {
@@ -329,16 +452,21 @@ const TournamentDetails = () => {
             </button>
           )}
 
-          {canEdit && (
-            <Link
-              to={`/tournaments/${t._id || id}/edit`}
-              className="rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-white"
-              aria-label="Edit tournament"
-              title="Edit tournament"
-            >
-              <Edit3 className="h-4 w-4" />
-            </Link>
+          {/* NEW: Mobile "My Group" / status */}
+          {isRegistered && (
+            groupStatusChecked && myGroup ? (
+              <button
+                onClick={() => setRoomOpen(true)}
+                className="rounded-xl bg-emerald-600 px-3 py-3 text-white font-semibold"
+                title="Open your group room"
+              >
+                {myGroupNumber ? `My Group: ${myGroupNumber}` : 'Check Your Room'}
+              </button>
+            ) : (
+              <Badge className="px-3 py-2">{groupStatusChecked ? 'Group not made' : 'Checking…'}</Badge>
+            )
           )}
+
           <button
             onClick={copyLink}
             className="rounded-xl border border-white/10 bg-white/5 p-3 text-white"
@@ -364,6 +492,22 @@ const TournamentDetails = () => {
                 <Edit3 className="h-4 w-4" /> Edit
               </Link>
             )}
+            {/* NEW: Desktop "My Group" / status inline (top actions) */}
+            {isRegistered && (
+              groupStatusChecked && myGroup ? (
+                <button
+                  onClick={() => setRoomOpen(true)}
+                  className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700"
+                  title="Open your group room"
+                >
+                  <Users className="h-4 w-4" />
+                  {myGroupNumber ? `My Group: ${myGroupNumber}` : 'Check Your Room'}
+                </button>
+              ) : (
+                <Badge className="px-2.5 py-1.5">{groupStatusChecked ? 'Group not made' : 'Checking…'}</Badge>
+              )
+            )}
+
             <button onClick={copyLink} className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white">
               <Share2 className="h-4 w-4" /> Share
             </button>
@@ -491,6 +635,22 @@ const TournamentDetails = () => {
                     <Edit3 className="mr-2 h-4 w-4" /> Edit
                   </Link>
                 )}
+
+                {/* NEW: Desktop CTA — My Group / status */}
+                {isRegistered && (
+                  groupStatusChecked && myGroup ? (
+                    <button
+                      onClick={() => setRoomOpen(true)}
+                      className="inline-flex items-center justify-center rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700"
+                      title="Open your group room"
+                    >
+                      <Users className="mr-2 h-4 w-4" />
+                      {myGroupNumber ? `My Group: ${myGroupNumber}` : 'Check Your Room'}
+                    </button>
+                  ) : (
+                    <Badge className="px-3 py-2">{groupStatusChecked ? 'Group not made' : 'Checking…'}</Badge>
+                  )
+                )}
               </div>
               <div className="mt-3 text-xs text-white/60 leading-relaxed">
                 Payments & refunds (if applicable) are handled by the organizer. Make sure your IGN details are correct.
@@ -498,6 +658,12 @@ const TournamentDetails = () => {
             </div>
           </div>
         </div>
+         {/* Group Room Modal */}
+   <PlayerGroupRoomModal
+     open={roomOpen && isRegistered}
+     onClose={() => setRoomOpen(false)}
+     tournamentId={t?._id || id}
+   />
 
         {/* Tabs */}
         <div className="mt-6">
@@ -586,9 +752,13 @@ const TournamentDetails = () => {
               </button>
             </div>
           </div>
+
+          
         )}
       </div>
     </div>
+   
+
   );
 };
 

@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { MessageSquare, Send, Lock, Upload } from 'lucide-react';
 import { scrimsAPI, uploadAPI } from '../services/api';
 import { NormalizeImageUrl } from '../utils/img.js';
+import { useParams } from 'react-router-dom';
 
 import toast from 'react-hot-toast';
 
@@ -40,17 +41,28 @@ const RoomView = ({ scrimId, isOwner }) => {
   const fileInputRef = useRef(null);
   const listRef = useRef(null);
   const messagesEndRef = useRef(null);
+   // also try to read from route if parent didn't pass
+  const { scrimId: pScrimId, id: pId } = useParams();
+  const resolvedScrimId = scrimId ?? pScrimId ?? pId ?? null;
 
-  useEffect(() => { fetchMessages(); }, [scrimId]);
+  useEffect(() => {
+   if (!resolvedScrimId) {
+     // no id → stop loading and show empty state instead of hammering API with "undefined"
+     setLoading(false);
+     return;
+   }
+   fetchMessages(resolvedScrimId);
+ }, [resolvedScrimId]);
   useEffect(() => { scrollToBottom(); }, [messages]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const fetchMessages = async () => {
+  const fetchMessages = async (sid) => {
+    if (!sid) return;
     try {
-      const response = await scrimsAPI.getRoomMessages(scrimId);
+      const response = await scrimsAPI.getRoomMessages(sid);
       setMessages(response?.data?.room?.messages || []);
     } catch (error) {
       console.error('Failed to fetch messages:', error);
@@ -64,7 +76,8 @@ const RoomView = ({ scrimId, isOwner }) => {
     e.preventDefault();
     if (!newMessage.trim()) return;
     try {
-      await scrimsAPI.sendRoomMessage(scrimId, { content: newMessage, type: 'text' });
+      if (!resolvedScrimId) return;
++ await scrimsAPI.sendRoomMessage(resolvedScrimId, { content: newMessage, type: 'text' });  
       setNewMessage('');
       fetchMessages();
       toast.success('Message sent');
@@ -85,7 +98,8 @@ const RoomView = ({ scrimId, isOwner }) => {
     setUploadingImage(true);
     try {
       const response = await uploadAPI.uploadImage(file);
-      await scrimsAPI.sendRoomMessage(scrimId, {
+      if (!resolvedScrimId) return;
+ await scrimsAPI.sendRoomMessage(resolvedScrimId, {
         content: `Image: ${file.name}`,
         type: 'image',
         imageUrl: response?.data?.imageUrl,
@@ -177,7 +191,7 @@ const RoomView = ({ scrimId, isOwner }) => {
                             <p className="mb-2 text-slate-200/90">{message.content}</p>
                           )}
                           <img
-                            src={normalizeImageUrl(message.imageUrl)}
+                            src={NormalizeImageUrl(message.imageUrl)}
                             alt="Shared"
                             className="max-h-56 max-w-full rounded-xl border border-white/10 cursor-zoom-in hover:opacity-95 transition"
                             onClick={() => window.open(message.imageUrl, '_blank')}

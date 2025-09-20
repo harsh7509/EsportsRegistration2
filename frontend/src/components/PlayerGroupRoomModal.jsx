@@ -1,28 +1,77 @@
-import React, { useEffect, useRef, useState, useMemo } from 'react';
+// src/components/PlayerGroupRoomModal.jsx
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { X, Send, Upload, Users as UsersIcon, RefreshCcw } from 'lucide-react';
 import { tournamentsAPI } from '../services/api';
 import toast from 'react-hot-toast';
 import { NormalizeImageUrl } from '../utils/img';
 
+/**
+ * PlayerGroupRoomModal
+ * Props:
+ *  - open: boolean
+ *  - onClose: () => void
+ *  - tournamentId: string  (must be a real tournament _id)
+ */
 export default function PlayerGroupRoomModal({ open, onClose, tournamentId }) {
   const [loading, setLoading] = useState(true);
+
   const [group, setGroup] = useState(null);
+  const [roomId, setRoomId] = useState(null);
+
   const [messages, setMessages] = useState([]);
+  const [teams, setTeams] = useState([]);
+
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [teams, setTeams] = useState([]);
   const [autoBusy, setAutoBusy] = useState(false);
+
   const fileRef = useRef(null);
   const scrollRef = useRef(null);
 
   const hasRoom = Boolean(group);
   const filteredMessages = useMemo(
-    () => (messages || []).filter((m) => m.type !== 'system'),
+    () => (messages || []).filter((m) => m?.type !== 'system'),
     [messages]
   );
 
-  // auto-scroll to latest
+  // Tailwind helpers (if you don't have project-wide classes)
+  const btnPrimary =
+    'px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white border border-indigo-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors';
+  const btnSecondary =
+    'px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors';
+  const inputArea =
+    'w-full rounded-lg bg-gray-800/60 border border-gray-700 text-gray-100 placeholder:text-gray-400 p-2 focus:outline-none focus:ring-2 focus:ring-indigo-500/40';
+
+  // ---------- helpers ----------
+  function parseRoomPayload(res) {
+    const d = res?.data ?? res ?? {};
+    const group =
+      d.group ||
+      d.myGroup ||
+      d.data?.group ||
+      d.room?.group ||
+      null;
+
+    const room =
+      d.room ||
+      d.groupRoom ||
+      d.data?.room ||
+      null;
+
+    const messages =
+      room?.messages ||
+      d.messages ||
+      d.roomMessages ||
+      [];
+
+    const roomId =
+      room?._id || room?.id || d.roomId || null;
+
+    return { group, roomId, messages };
+  }
+
+  // auto-scroll to latest when messages list updates
   useEffect(() => {
     if (!open) return;
     const el = scrollRef.current;
@@ -43,13 +92,25 @@ export default function PlayerGroupRoomModal({ open, onClose, tournamentId }) {
         ]);
 
         if (cancelled) return;
-        setGroup(roomRes?.data?.group || null);
-        setMessages(roomRes?.data?.room?.messages || []);
-        setTeams(Array.isArray(teamsRes?.data?.teams) ? teamsRes.data.teams : []);
+
+        const pr = parseRoomPayload(roomRes);
+        setGroup(pr.group);
+        setRoomId(pr.roomId);
+        setMessages(Array.isArray(pr.messages) ? pr.messages : []);
+
+        const teamsPayload = teamsRes?.data ?? teamsRes ?? {};
+        const teamsList =
+          teamsPayload.teams ||
+          teamsPayload.data?.teams ||
+          teamsPayload.group?.teams ||
+          [];
+        setTeams(Array.isArray(teamsList) ? teamsList : []);
       } catch (e) {
         if (!cancelled) {
+          console.error(e);
           toast.error(e?.response?.data?.message || 'Failed to open group room');
           setGroup(null);
+          setRoomId(null);
           setMessages([]);
           setTeams([]);
         }
@@ -58,7 +119,9 @@ export default function PlayerGroupRoomModal({ open, onClose, tournamentId }) {
       }
     })();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [open, tournamentId]);
 
   const refreshMessages = async () => {
@@ -66,13 +129,21 @@ export default function PlayerGroupRoomModal({ open, onClose, tournamentId }) {
     try {
       setRefreshing(true);
       const res = await tournamentsAPI.getMyGroupRoomMessages(tournamentId);
-      setGroup(res?.data?.group || null);
-      setMessages(res?.data?.room?.messages || []);
+      const pr = parseRoomPayload(res);
+      setGroup(pr.group);
+      setRoomId(pr.roomId);
+      setMessages(Array.isArray(pr.messages) ? pr.messages : []);
 
-      // also refresh teams
       const t = await tournamentsAPI.getMyGroupTeams(tournamentId);
-      setTeams(Array.isArray(t?.data?.teams) ? t.data.teams : []);
-    } catch {
+      const teamsPayload = t?.data ?? t ?? {};
+      const teamsList =
+        teamsPayload.teams ||
+        teamsPayload.data?.teams ||
+        teamsPayload.group?.teams ||
+        [];
+      setTeams(Array.isArray(teamsList) ? teamsList : []);
+    } catch (e) {
+      console.error(e);
       toast.error('Failed to refresh');
     } finally {
       setRefreshing(false);
@@ -84,10 +155,14 @@ export default function PlayerGroupRoomModal({ open, onClose, tournamentId }) {
     if (!text.trim() || !hasRoom || sending) return;
     try {
       setSending(true);
-      await tournamentsAPI.sendMyGroupRoomMessage(tournamentId, { content: text.trim(), type: 'text' });
+      await tournamentsAPI.sendMyGroupRoomMessage(tournamentId, {
+        content: text.trim(),
+        type: 'text',
+      });
       setText('');
       await refreshMessages();
-    } catch {
+    } catch (e) {
+      console.error(e);
       toast.error('Failed to send');
     } finally {
       setSending(false);
@@ -98,49 +173,39 @@ export default function PlayerGroupRoomModal({ open, onClose, tournamentId }) {
     const file = e.target.files?.[0];
     if (!file || !hasRoom) return;
     try {
+      // Wire this to your upload API, then send image message
       toast('Image upload not wired yet. Upload and then call sendMyGroupRoomMessage({ type:"image", imageUrl })');
       // Example:
       // const up = await uploadAPI.uploadImage(file);
-      // await tournamentsAPI.sendMyGroupRoomMessage(tournamentId, { type:'image', imageUrl: up.data.imageUrl, content: file.name });
+      // await tournamentsAPI.sendMyGroupRoomMessage(tournamentId, {
+      //   type: 'image',
+      //   imageUrl: up.data.imageUrl,
+      //   content: file.name,
+      // });
       // await refreshMessages();
     } finally {
       if (fileRef.current) fileRef.current.value = '';
     }
   };
 
-  const onKeyDown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendText();
-    }
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-      e.preventDefault();
-      setText((t) => t + '\n'); // soft line break
-    }
-  };
-
-  // NEW: Auto (16) — removes old auto-4/auto-5 variants
+  // Auto-group 16 (for org/admin paths)
   const autoGroup16 = async () => {
     if (!tournamentId) return;
     try {
       setAutoBusy(true);
-      // Try primary endpoint
       if (typeof tournamentsAPI.autoGroupTeams === 'function') {
         await tournamentsAPI.autoGroupTeams(tournamentId, { size: 16 });
       } else if (typeof tournamentsAPI.createOrFillMyGroup === 'function') {
-        // Fallback name (if your API uses a different method)
         await tournamentsAPI.createOrFillMyGroup(tournamentId, { limit: 16 });
+      } else if (typeof tournamentsAPI.autoGroup === 'function') {
+        await tournamentsAPI.autoGroup(tournamentId, { size: 16 });
       } else {
-        // As a last resort, try a very generic name to avoid hard failure.
-        if (typeof tournamentsAPI.autoGroup === 'function') {
-          await tournamentsAPI.autoGroup(tournamentId, { size: 16 });
-        } else {
-          throw new Error('Auto-group API not found on tournamentsAPI');
-        }
+        throw new Error('Auto-group API not found on tournamentsAPI');
       }
       toast.success('Auto grouped 16 teams successfully');
       await refreshMessages();
     } catch (e) {
+      console.error(e);
       toast.error(e?.response?.data?.message || 'Auto grouping failed');
     } finally {
       setAutoBusy(false);
@@ -151,12 +216,12 @@ export default function PlayerGroupRoomModal({ open, onClose, tournamentId }) {
 
   return (
     <div className="fixed inset-0 bg-black/60 z-50 grid place-items-center p-4">
-      <div className="bg-gray-850 bg-gray-800 rounded-2xl shadow-2xl w-full max-w-2xl border border-gray-700">
+      <div className="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-2xl border border-gray-700">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-gray-700">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <div className="px-2 py-0.5 text-xs rounded-full bg-gaming-purple/15 text-gaming-purple border border-gaming-purple/30">
+              <div className="px-2 py-0.5 text-xs rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-400/30">
                 Group Room
               </div>
               {hasRoom && (
@@ -167,16 +232,16 @@ export default function PlayerGroupRoomModal({ open, onClose, tournamentId }) {
               )}
             </div>
             <h3 className="mt-1 text-lg font-semibold truncate">
-              {hasRoom ? group?.name : 'My Group'}
+              {hasRoom ? (group?.name || `Group`) : 'My Group'}
             </h3>
           </div>
 
           <div className="flex items-center gap-2">
-            {/* NEW: Auto(16) button */}
+            {/* Auto(16) (optional) */}
             <button
               onClick={autoGroup16}
               disabled={autoBusy || loading}
-              className="px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white border border-indigo-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className={btnPrimary}
               title="Auto create/fill group with 16 teams"
             >
               {autoBusy ? 'Auto…' : 'Auto (16)'}
@@ -185,7 +250,7 @@ export default function PlayerGroupRoomModal({ open, onClose, tournamentId }) {
             <button
               onClick={refreshMessages}
               disabled={refreshing || loading}
-              className="px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className={btnSecondary}
               title="Refresh"
             >
               <RefreshCcw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
@@ -206,8 +271,14 @@ export default function PlayerGroupRoomModal({ open, onClose, tournamentId }) {
               <div className="text-sm font-semibold mb-2">Teams in your group</div>
               {teams.length ? (
                 <ul className="text-sm grid grid-cols-1 md:grid-cols-2 gap-1">
-                  {teams.map((ti) => (
-                    <li key={ti.userId || ti._id} className="truncate">• {ti.teamName || ti.name || 'Team'}</li>
+                  {teams.map((ti, idx) => (
+                    <li
+                      key={ti.userId || ti._id || idx}
+                      className="truncate"
+                      title={ti.teamName || ti.name || 'Team'}
+                    >
+                      • {ti.teamName || ti.name || 'Team'}
+                    </li>
                   ))}
                 </ul>
               ) : (
@@ -224,11 +295,11 @@ export default function PlayerGroupRoomModal({ open, onClose, tournamentId }) {
             {loading ? (
               <SkeletonMessages />
             ) : !hasRoom ? (
-              <div className="text-gray-400 text-sm">You are not in any group yet (or groups aren’t formed).</div>
+              <div className="text-gray-400 text-sm">
+                You are not in any group yet (or groups aren’t formed).
+              </div>
             ) : filteredMessages.length ? (
-              filteredMessages.map((m, i) => (
-                <MessageBubble key={m._id || i} m={m} />
-              ))
+              filteredMessages.map((m, i) => <MessageBubble key={m._id || i} m={m} />)
             ) : (
               <EmptyChat />
             )}
@@ -242,20 +313,39 @@ export default function PlayerGroupRoomModal({ open, onClose, tournamentId }) {
                 id="group-message"
                 value={text}
                 onChange={(e) => setText(e.target.value)}
-                onKeyDown={onKeyDown}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    sendText();
+                  }
+                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                    e.preventDefault();
+                    setText((t) => t + '\n'); // soft line break
+                  }
+                }}
                 rows={1}
-                placeholder={hasRoom ? 'Message your group… (Enter to send, Shift+Enter for new line)' : 'No group available'}
+                placeholder={
+                  hasRoom
+                    ? 'Message your group… (Enter to send, Shift+Enter for new line)'
+                    : 'No group available'
+                }
                 disabled={!hasRoom || loading}
-                className="input w-full resize-none"
+                className={inputArea}
               />
             </div>
 
-            <input ref={fileRef} type="file" accept="image/*" onChange={sendImage} className="hidden" />
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              onChange={sendImage}
+              className="hidden"
+            />
             <button
               type="button"
               onClick={() => fileRef.current?.click()}
               disabled={!hasRoom || loading}
-              className="btn-secondary"
+              className={btnSecondary}
               title="Upload image"
             >
               <Upload className="h-4 w-4" />
@@ -264,7 +354,7 @@ export default function PlayerGroupRoomModal({ open, onClose, tournamentId }) {
             <button
               type="submit"
               disabled={!hasRoom || !text.trim() || sending || loading}
-              className="btn-primary"
+              className={btnPrimary}
               title="Send"
             >
               <Send className="h-4 w-4" />
@@ -290,18 +380,26 @@ function MessageBubble({ m }) {
       </div>
       <div className="flex-1">
         <div className="text-xs text-gray-300">
-          <span className="font-medium">{m?.senderId?.name || m?.senderId?.username || 'User'}</span>{' '}
+          <span className="font-medium">
+            {m?.senderId?.name || m?.senderId?.username || 'User'}
+          </span>{' '}
           <span className="text-gray-400">• {when}</span>
         </div>
 
         <div className="mt-1 rounded-lg bg-gray-700/80 border border-gray-700 p-2">
-          {m.type === 'image' && m.imageUrl ? (
+          {m?.type === 'image' && m?.imageUrl ? (
             <>
-              {m.content ? <div className="text-sm mb-1">{m.content}</div> : null}
-              <img src={normalizeImageUrl(m.imageUrl)} alt="" className="rounded max-w-full" />
+              {m?.content ? (
+                <div className="text-sm mb-1">{m.content}</div>
+              ) : null}
+              <img
+                src={NormalizeImageUrl(m.imageUrl)}
+                alt=""
+                className="rounded max-w-full"
+              />
             </>
           ) : (
-            <div className="text-sm whitespace-pre-wrap">{m.content}</div>
+            <div className="text-sm whitespace-pre-wrap">{m?.content}</div>
           )}
         </div>
       </div>

@@ -10,6 +10,10 @@ import TournamentManage from './pages/TournamentManage';
 import VerifyOrg from './pages/VerifyOrg';
 import AdminKycReview from './pages/AdminKycReview';
 import RequireAdmin from './components/RequireAdmin';
+import GroupRoom from './components/PlayerGroupRoomModal';       // <-- apni file/component
+import RoomPage from './components/RoomView';         // <-- apni file/component
+
+
 
 
 
@@ -69,6 +73,8 @@ function App() {
               <Route path="/tournaments/:id" element={<TournamentDetail />} />
               <Route path="/tournaments" element={<TournamentList />} />
               <Route path="/tournaments/:id/edit" element={<EditTournament />} />
+              <Route path="/tournaments/:id/groups/:groupId" element={<GroupRoom />} />   {/* <-- ADD */}
+        <Route path="/rooms/:roomId" element={<RoomPage />} />  
 
 
               <Route path="/tournaments/:id/manage" element={<TournamentManage />} />

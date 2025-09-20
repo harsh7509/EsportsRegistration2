@@ -223,6 +223,9 @@ export const tournamentsAPI = {
 
   deleteGroupRoom: (tid, gid) => api.delete(`/tournaments/${tid}/groups/${gid}/room`),
   deleteGroup: (tid, gid) => api.delete(`/tournaments/${tid}/groups/${gid}`),
+  
+
+
 };
 
 // Organizations API (with /organizations → /orgs fallback)
