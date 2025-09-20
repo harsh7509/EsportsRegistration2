@@ -1,3 +1,4 @@
+// frontend/src/context/SocketProvider.jsx
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { io } from 'socket.io-client';
 import { useAuth } from './AuthContext';
@@ -7,22 +8,28 @@ const SocketContext = createContext(null);
 
 export const SocketProvider = ({ children }) => {
   const { isAuthenticated } = useAuth();
+
   const [socket, setSocket] = useState(null);
   const [connected, setConnected] = useState(false);
 
-  // Allow turning sockets off if backend isn't ready
+  // Toggle sockets via env if needed
   const ENABLE_SOCKET = (import.meta.env.VITE_ENABLE_SOCKET ?? 'true') !== 'false';
 
-  // Prefer env, else fallback to 4000
+  // Use your Render backend in prod; localhost in dev
   const SOCKET_URL = useMemo(() => {
-    return import.meta.env.VITE_SOCKET_URL || 'http://localhost:4000';
+    return (
+      import.meta.env.VITE_SOCKET_URL ||
+      (import.meta.env.DEV
+        ? 'http://localhost:4000'
+        : 'https://esportsregistration2.onrender.com')
+    );
   }, []);
 
   useEffect(() => {
+    // Close if disabled or user is logged out
     if (!ENABLE_SOCKET || !isAuthenticated) {
-      // clean up any existing socket
       if (socket) {
-        socket.close();
+        try { socket.close(); } catch {}
         setSocket(null);
         setConnected(false);
       }
@@ -30,26 +37,23 @@ export const SocketProvider = ({ children }) => {
     }
 
     const token = getToken();
-    let s;
-    try {
-      s = io(SOCKET_URL, {
-        path: '/socket.io',
-        transports: ['websocket'],
-        auth: { token: token ? `Bearer ${token}` : undefined },
-        reconnection: true,
-        reconnectionAttempts: 5,
-        reconnectionDelay: 1000,
-      });
-    } catch (e) {
-      console.warn('Socket init failed:', e?.message || e);
-      setSocket(null);
-      setConnected(false);
-      return;
-    }
+
+    // Always connect directly to backend domain (Vercel won't tunnel WS)
+    const s = io(SOCKET_URL, {
+      path: '/socket.io',
+      // Allow polling fallback to get through cold starts / proxies
+      transports: ['websocket', 'polling'],
+      auth: token ? { token: `Bearer ${token}` } : undefined,
+      reconnection: true,
+      reconnectionAttempts: 10,
+      reconnectionDelay: 1000,
+      timeout: 20000, // handshake timeout
+      withCredentials: false, // set true only if server uses cookies cross-site
+    });
 
     s.on('connect', () => {
       setConnected(true);
-      console.log('[socket] connected', s.id);
+      console.log('[socket] connected:', s.id);
     });
 
     s.on('disconnect', (reason) => {
@@ -58,14 +62,13 @@ export const SocketProvider = ({ children }) => {
     });
 
     s.on('connect_error', (err) => {
-      // This will fire on 404 from server; we just warn and keep UI alive
       console.warn('[socket] connect_error:', err?.message || err);
     });
 
     setSocket(s);
 
     return () => {
-      try { s?.close(); } catch {}
+      try { s.close(); } catch {}
       setConnected(false);
       setSocket(null);
     };
@@ -73,7 +76,6 @@ export const SocketProvider = ({ children }) => {
   }, [isAuthenticated, ENABLE_SOCKET, SOCKET_URL]);
 
   const value = useMemo(() => ({ socket, connected }), [socket, connected]);
-
   return <SocketContext.Provider value={value}>{children}</SocketContext.Provider>;
 };
 
