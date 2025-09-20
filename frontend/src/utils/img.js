@@ -1,5 +1,5 @@
 // frontend/src/utils/img.ts (or .js)
-export function normalizeImageUrl(url) {
+export function NormalizeImageUrl(url) {
   if (!url) return url;
   // Kill obvious localhost leftovers
   if (/^http:\/\/localhost(:\d+)?\//i.test(url)) {

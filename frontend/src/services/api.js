@@ -1,41 +1,57 @@
+// src/services/api.js
 import axios from 'axios';
 
+/**
+ * ORIGIN resolution rules:
+ * 1) Prefer VITE_API_URL (what you set on Vercel)
+ * 2) Fallback to VITE_API_BASE_URL (if you also set it)
+ * 3) Dev only: http://localhost:4000
+ * 4) (Optional) As a last resort for setups that proxy /api on same origin, use '/api'
+ *    — but since you've already set envs on Vercel, #1 will be used in production.
+ */
+const RAW_ORIGIN =
+  import.meta.env.VITE_API_URL ??
+  import.meta.env.VITE_API_BASE_URL ??
+  (import.meta.env.DEV ? 'http://localhost:4000' : null);
 
-export const ORIGIN =
-  (import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000').replace(/\/+$/, '');
+if (!RAW_ORIGIN) {
+  // Crash loud in production to avoid silently hitting localhost
+  throw new Error(
+    'Missing VITE_API_URL (or VITE_API_BASE_URL). Add it in Vercel → Project → Settings → Environment Variables.'
+  );
+}
 
-  
+export const ORIGIN = RAW_ORIGIN.replace(/\/+$/, ''); // trim trailing slash
 export const API_BASE = `${ORIGIN}/api`;
 
 // Create axios instance
 export const api = axios.create({
-  baseURL: API_BASE,            // ✅ अब हमेशा https://render-backend/api
-  withCredentials: true,
+  baseURL: API_BASE,
+  // Set to true ONLY if you actually use cookies cross-site (SameSite=None; Secure)
+  withCredentials: false,
   headers: { 'Content-Type': 'application/json' },
 });
 
-// Token management
+// ========== Token management ==========
 const ACCESS_KEY = 'accessToken';
 const REFRESH_KEY = 'refreshToken';
 
-const getToken = () => localStorage.getItem(ACCESS_KEY);
-const getRefreshToken = () => localStorage.getItem(REFRESH_KEY);
+export const getToken = () => localStorage.getItem(ACCESS_KEY) || '';
+export const getRefreshToken = () => localStorage.getItem(REFRESH_KEY) || '';
 
-// helper to store tokens (already used by Login/Signup)
- const setTokens = (access, refresh) => {
-  if (access) localStorage.setItem('accessToken', access);
-  if (refresh) localStorage.setItem('refreshToken', refresh);
-  api.defaults.headers.common.Authorization = `Bearer ${access}`;
+export const setTokens = (access, refresh) => {
+  if (access) localStorage.setItem(ACCESS_KEY, access);
+  if (refresh) localStorage.setItem(REFRESH_KEY, refresh);
+  if (access) api.defaults.headers.common.Authorization = `Bearer ${access}`;
 };
 
-
-const clearTokens = () => {
+export const clearTokens = () => {
   localStorage.removeItem(ACCESS_KEY);
   localStorage.removeItem(REFRESH_KEY);
   delete api.defaults.headers.common.Authorization;
 };
 
-// Request interceptor to add auth token
+// ========== Interceptors ==========
 api.interceptors.request.use(
   (config) => {
     const token = getToken();
@@ -45,12 +61,15 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Response interceptor for token refresh
+/**
+ * 401 refresh flow:
+ * - uses PLAIN axios (not the api instance) to avoid interceptor recursion
+ * - fixed bug: use API_BASE here (not undefined API_BASE_URL)
+ */
 api.interceptors.response.use(
-  (response) => response,
+  (res) => res,
   async (error) => {
     const originalRequest = error.config;
-
     if (error.response?.status === 401 && !originalRequest?._retry) {
       originalRequest._retry = true;
 
@@ -61,22 +80,20 @@ api.interceptors.response.use(
           return Promise.reject(error);
         }
 
-        // Use axios (NOT the api instance) so we don't run into interceptor recursion.
-        // Keep base consistent: '/api' (same origin) to avoid CORS/port mismatches.
-        const resp = await axios.post(`${API_BASE}/auth/refresh`, { refreshToken }, {
-          headers: { 'Content-Type': 'application/json' },
-          withCredentials: true,
-        });
+        const resp = await axios.post(
+          `${API_BASE}/auth/refresh`,
+          { refreshToken },
+          { headers: { 'Content-Type': 'application/json' } }
+        );
 
-        // Accept multiple token key names from backend
         const newAccess =
-          response?.data?.accessToken ||
-          response?.data?.access_token ||
-          response?.data?.token;
+          resp?.data?.accessToken ||
+          resp?.data?.access_token ||
+          resp?.data?.token;
 
         const newRefresh =
-          response?.data?.refreshToken ||
-          response?.data?.refresh_token ||
+          resp?.data?.refreshToken ||
+          resp?.data?.refresh_token ||
           refreshToken;
 
         if (!newAccess) {
@@ -84,16 +101,13 @@ api.interceptors.response.use(
           return Promise.reject(new Error('Refresh failed: no access token'));
         }
 
-        // Persist + update default header
         setTokens(newAccess, newRefresh);
-
-        // Retry original request with new token
         originalRequest.headers = originalRequest.headers || {};
         originalRequest.headers.Authorization = `Bearer ${newAccess}`;
         return api(originalRequest);
-      } catch (refreshError) {
+      } catch (e) {
         clearTokens();
-        return Promise.reject(refreshError);
+        return Promise.reject(e);
       }
     }
 
@@ -101,13 +115,7 @@ api.interceptors.response.use(
   }
 );
 
-// Profile API (player's own data)
-export const profileAPI = {
-  myBookings: () => api.get('/profile/bookings'),
-};
-
-
-// Auth API
+// ========== APIs ==========
 export const authAPI = {
   register: (body) => api.post('/auth/register', body),
   login: (body) => api.post('/auth/login', body),
@@ -116,13 +124,12 @@ export const authAPI = {
   me: () => api.get('/auth/me'),
   updateProfile: (data) => api.put('/auth/profile', data),
   switchRole: (role) => api.post('/auth/switch-role', { role }),
-  sendOtp: (body) => api.post('/auth/otp/send', body),      // { tempToken, channel: 'email' | 'phone' }
+  sendOtp: (body) => api.post('/auth/otp/send', body),
   verifyOtp: (body) => api.post('/auth/otp/verify', body),
 };
 
-// Upload API
 export const uploadAPI = {
-  uploadImage: async (file) => {
+  uploadImage: (file) => {
     const formData = new FormData();
     formData.append('image', file);
     return api.post('/upload/image', formData, {
@@ -131,12 +138,15 @@ export const uploadAPI = {
   },
 };
 
-// Scrims API
+export const profileAPI = {
+  myBookings: () => api.get('/profile/bookings'),
+};
+
 export const scrimsAPI = {
   getList: (params) => api.get('/scrims', { params }),
   getDetails: (id) => api.get(`/scrims/${id}`),
-  create: (scrimData) => api.post('/scrims', scrimData),
-  book: (id, playerInfo) => api.post(`/scrims/${id}/book`, playerInfo),
+  create: (data) => api.post('/scrims', data),
+  book: (id, body) => api.post(`/scrims/${id}/book`, body),
   getRoomCredentials: (id) => api.get(`/scrims/${id}/room`),
   uploadPoints: (id, formData) =>
     api.post(`/scrims/${id}/points`, formData, {
@@ -153,31 +163,27 @@ export const scrimsAPI = {
   getParticipantDetails: (id) => api.get(`/scrims/${id}/participants`),
 };
 
-// Promos API
 export const promosAPI = {
   getActive: () => api.get('/promos'),
-  create: (promoData) => api.post('/promos', promoData),
+  create: (data) => api.post('/promos', data),
 };
 
 export const tournamentsAPI = {
-  // public
   list: (params) => api.get('/tournaments', { params }),
   get: (id) => api.get(`/tournaments/${id}`),
 
-  // org/admin
   create: (data) => api.post('/tournaments', data),
   update: (id, data) => api.put(`/tournaments/${id}`, data),
   deleteTournament: (tid) => api.delete(`/tournaments/${tid}`),
 
-  // registration
-  // registration (✅ accepts payload now)
-  
-  register: (tournamentId, data) => api.post(`/tournaments/${tournamentId}/register`, data),
+  register: (tournamentId, data) =>
+    api.post(`/tournaments/${tournamentId}/register`, data),
 
-  // participants & groups (protected)
-  getParticipants: (tournamentId) => api.get(`/tournaments/${tournamentId}/participants`),
+  getParticipants: (tournamentId) =>
+    api.get(`/tournaments/${tournamentId}/participants`),
   removeParticipant: (tournamentId, userId) =>
     api.delete(`/tournaments/${tournamentId}/participants/${userId}`),
+
   createGroup: (id, payload) => api.post(`/tournaments/${id}/groups`, payload),
   listGroups: (tournamentId) => api.get(`/tournaments/${tournamentId}/groups`),
 
@@ -185,11 +191,9 @@ export const tournamentsAPI = {
   addGroupMember: (tournamentId, groupId, body) =>
     api.post(`/tournaments/${tournamentId}/groups/${groupId}/members`, body),
 
-  // auto group (single definition)
   autoGroup: (tournamentId, size = 4) =>
     api.post(`/tournaments/${tournamentId}/groups/auto`, {}, { params: { size } }),
 
-  // group rooms (org/admin)
   createGroupRoom: (tournamentId, groupId) =>
     api.post(`/tournaments/${tournamentId}/groups/${groupId}/room`),
   getGroupRoomMessages: (tournamentId, groupId) =>
@@ -201,7 +205,6 @@ export const tournamentsAPI = {
   deleteGroupRoomMessage: (tid, gid, mid) =>
     api.delete(`/tournaments/${tid}/groups/${gid}/room/messages/${mid}`),
 
-  // group admin ops
   renameGroup: (tid, gid, name) =>
     api.post(`/tournaments/${tid}/groups/${gid}/rename`, { name }),
   removeGroupMember: (tid, gid, userId) =>
@@ -209,25 +212,20 @@ export const tournamentsAPI = {
   moveGroupMember: (tid, payload) =>
     api.post(`/tournaments/${tid}/groups/move-member`, payload),
 
-  // player/self
   myGroup: (id) => api.get(`/tournaments/${id}/my-group`),
   getMyGroupRoomMessages: (id) => api.get(`/tournaments/${id}/my-group/room/messages`),
-  sendMyGroupRoomMessage: (id, body) => api.post(`/tournaments/${id}/my-group/room/messages`, body),
+  sendMyGroupRoomMessage: (id, body) =>
+    api.post(`/tournaments/${id}/my-group/room/messages`, body),
   editMyGroupRoomMessage: (tid, mid, body) =>
     api.patch(`/tournaments/${tid}/my-group/room/messages/${mid}`, body),
   deleteMyGroupRoomMessage: (tid, mid) =>
     api.delete(`/tournaments/${tid}/my-group/room/messages/${mid}`),
 
-  deleteGroupRoom: (tid, gid) =>
-  api.delete(`/tournaments/${tid}/groups/${gid}/room`),
+  deleteGroupRoom: (tid, gid) => api.delete(`/tournaments/${tid}/groups/${gid}/room`),
   deleteGroup: (tid, gid) => api.delete(`/tournaments/${tid}/groups/${gid}`),
 };
 
-
-
-
-
-// Organizations API (with safe fallbacks to /orgs if /organizations not mounted)
+// Organizations API (with /organizations → /orgs fallback)
 export const organizationsAPI = {
   getRankings: async (params) => {
     try {
@@ -250,12 +248,15 @@ export const organizationsAPI = {
     }
   },
   getOrganizationProfile: (orgId) => api.get(`/orgs/${orgId}`),
-  updateOrganizationRanking: (orgId, ranking) => api.put(`/orgs/${orgId}/ranking`, { ranking }),
+  updateOrganizationRanking: (orgId, ranking) =>
+    api.put(`/orgs/${orgId}/ranking`, { ranking }),
   getAllOrganizations: () => api.get('/orgs'),
   rate: (orgId, data) => api.post(`/organizations/${orgId}/rate`, data),
-    // KYC
+
   submitKyc: (formData) =>
-    api.post('/orgs/verify/submit', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+    api.post('/orgs/verify/submit', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
   myKyc: () => api.get('/orgs/verify/me'),
 };
 
@@ -265,33 +266,27 @@ export const adminAPI = {
   getUsers: (params) => api.get('/admin/users', { params }),
   updateUserRole: (userId, role) => api.put(`/admin/users/${userId}/role`, { role }),
   deleteUser: (userId) => api.delete(`/admin/users/${userId}`),
+
   getPromotions: (params) => api.get('/admin/promotions', { params }),
   createPromotion: (data) => api.post('/admin/promotions', data),
   updatePromotion: (promoId, data) => api.put(`/admin/promotions/${promoId}`, data),
   deletePromotion: (promoId) => api.delete(`/admin/promotions/${promoId}`),
   trackPromoClick: (promoId) => api.post(`/admin/promotions/${promoId}/click`),
+
   updateUser: (userId, data) => api.put(`/admin/users/${userId}`, data),
-  
 
-
-   listScrims:   (params) => api.get('/admin/scrims', { params }),
+  listScrims: (params) => api.get('/admin/scrims', { params }),
   listTournaments: (params) => api.get('/admin/tournaments', { params }),
   listBookings: (params) => api.get('/admin/bookings', { params }),
   listPayments: (params) => api.get('/admin/payments', { params }),
-  listRatings:  (params) => api.get('/admin/ratings', { params }),
+  listRatings: (params) => api.get('/admin/ratings', { params }),
 
-  // org controls
   setOrgVerified: (userId, verified) => api.post(`/admin/orgs/${userId}/verify`, { verified }),
-  setOrgRanking:  (userId, ranking)  => api.post(`/admin/orgs/${userId}/ranking`, { ranking }),
-    // KYC review
+  setOrgRanking: (userId, ranking) => api.post(`/admin/orgs/${userId}/ranking`, { ranking }),
+
   listOrgKyc: () => api.get('/admin/org-kyc'),
-  reviewOrgKyc: (userId, action, notes) => api.post(`/admin/org-kyc/${userId}/review`, { action, notes }),
+  reviewOrgKyc: (userId, action, notes) =>
+    api.post(`/admin/org-kyc/${userId}/review`, { action, notes }),
 };
 
-
-
-// Export utilities
-export { setTokens, clearTokens, getToken };
 export default api;
-
-

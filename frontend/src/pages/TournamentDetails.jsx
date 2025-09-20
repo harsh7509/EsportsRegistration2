@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { tournamentsAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { normalizeImageUrl } from '../utils/img';
+import { NormalizeImageUrl } from '../utils/img';
 import toast from 'react-hot-toast';
 
 const emptyPlayer = () => ({ ignName: '', ignId: '' });
@@ -374,7 +374,7 @@ const TournamentDetails = () => {
         <div className="overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-b from-gray-800/60 to-gray-900/60 backdrop-blur">
           <div className="relative">
             {t.bannerUrl ? (
-              <img src={normalizeImageUrl(t.bannerUrl)} alt={t.title} className="h-64 w-full object-cover" />
+              <img src={NormalizeImageUrl(t.bannerUrl)} alt={t.title} className="h-64 w-full object-cover" />
             ) : (
               <div className="h-64 w-full bg-[radial-gradient(1200px_600px_at_20%_10%,#6d28d9_0,#111827_50%,#0b0f1a_100%)]" />
             )}
