@@ -42,7 +42,8 @@ const __dirname = path.dirname(__filename);
 
 app.use(
   cors({
-    origin: "https://arenapulse-orcin.vercel.app",
+    origin: [ "http://localhost:5173",
+    "https://arenapulse-orcin.vercel.app"], // ✅ no trailing slash
     methods: ["GET","POST","PUT","PATCH","DELETE","OPTIONS"],
   credentials: true
   })
@@ -77,7 +78,11 @@ const server = http.createServer(app);
 const io = new SocketIOServer(server, {
   path: '/socket.io',
   cors: {
-    origin: "https://arenapulse-orcin.vercel.app",
+    origin: [
+      "http://localhost:5173",
+      "https://arenapulse-orcin.vercel.app"
+    ],
+
     methods: ['GET', 'POST'],
     credentials: true,
   },
