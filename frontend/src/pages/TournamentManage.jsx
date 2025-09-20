@@ -1,6 +1,6 @@
 // frontend/src/pages/TournamentManage.jsx
 import React, { useEffect, useState, useRef, useMemo } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { tournamentsAPI, uploadAPI } from '../services/api';
 import {
   Users, MessageSquare, Send, Upload, Plus, Edit3, Trash2, Scissors, X,
@@ -11,6 +11,7 @@ import { useAuth } from '../context/AuthContext';
 
 export default function TournamentManage() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const { loading: authLoading, isAuthenticated } = useAuth();
 
   // data
@@ -34,6 +35,8 @@ export default function TournamentManage() {
   // tournament edit/delete
   const [tEditOpen, setTEditOpen] = useState(false);
   const [tForm, setTForm] = useState({ title: '', description: '', price: 0, capacity: 0 });
+  const [deleting, setDeleting] = useState(false);
+  const [deleted, setDeleted] = useState(false);
 
   // team detail modal
   const [showTeamModal, setShowTeamModal] = useState(false);
@@ -45,8 +48,7 @@ export default function TournamentManage() {
   const [selectedPlayers, setSelectedPlayers] = useState({}); // userId => true
 
   // filters / ui
-  // 'all' | 'group' | 'ungrouped'
-  const [listFilter, setListFilter] = useState('all');
+  const [listFilter, setListFilter] = useState('all'); // 'all' | 'group' | 'ungrouped'
   const [search, setSearch] = useState('');
   const [view, setView] = useState('list'); // 'list' | 'grid'
 
@@ -55,7 +57,7 @@ export default function TournamentManage() {
 
   // --- loaders ---
   const refreshMessages = async () => {
-    if (!selectedGroup) return;
+    if (!selectedGroup || deleted) return;
     try {
       const res = await tournamentsAPI.getGroupRoomMessages(id, selectedGroup._id);
       setMessages(arr(res?.data?.room?.messages));
@@ -65,7 +67,7 @@ export default function TournamentManage() {
   };
 
   const load = async () => {
-    if (!isAuthenticated || authLoading) return;
+    if (!isAuthenticated || authLoading || deleted) return;
     try {
       const [p, g, t] = await Promise.all([
         tournamentsAPI.getParticipants(id),
@@ -107,6 +109,13 @@ export default function TournamentManage() {
       }
     } catch (e) {
       console.error('load error:', e);
+      if (e?.response?.status === 404) {
+        // tournament is gone — hard stop and redirect
+        toast('Tournament no longer exists', { icon: '⚠️' });
+        setDeleted(true);
+        navigate('/tournaments', { replace: true });
+        return;
+      }
       if (e?.response?.status === 401 || e?.response?.status === 403) {
         toast.error('You are not authorized to manage this tournament');
       } else {
@@ -153,6 +162,7 @@ export default function TournamentManage() {
   };
 
   const openGroup = async (g) => {
+    if (deleted) return;
     try {
       if (selectedGroup && String(selectedGroup._id) === String(g._id)) {
         setSelectedGroup(null);
@@ -172,7 +182,7 @@ export default function TournamentManage() {
   };
 
   const createRoomNow = async () => {
-    if (!selectedGroup) return;
+    if (!selectedGroup || deleted) return;
     try {
       await tournamentsAPI.getGroupRoomMessages(id, selectedGroup._id);
       await load();
@@ -185,7 +195,7 @@ export default function TournamentManage() {
 
   const sendText = async (e) => {
     e.preventDefault();
-    if (!selectedGroup || !text.trim()) return;
+    if (!selectedGroup || !text.trim() || deleted) return;
     try {
       await tournamentsAPI.sendGroupRoomMessage(id, selectedGroup._id, { content: text, type: 'text' });
       setText('');
@@ -198,7 +208,7 @@ export default function TournamentManage() {
 
   const sendImage = async (e) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file || !selectedGroup || deleted) return;
     try {
       const up = await uploadAPI.uploadImage(file);
       const url = up?.data?.imageUrl;
@@ -220,7 +230,7 @@ export default function TournamentManage() {
   const startEditMsg = (m) => { setEditingMsgId(m._id); setEditText(m.content || ''); };
   const cancelEditMsg = () => { setEditingMsgId(null); setEditText(''); };
   const saveEditMsg = async () => {
-    if (!selectedGroup || !editingMsgId) return;
+    if (!selectedGroup || !editingMsgId || deleted) return;
     try {
       await tournamentsAPI.editGroupRoomMessage(id, selectedGroup._id, editingMsgId, { content: editText });
       cancelEditMsg();
@@ -231,7 +241,7 @@ export default function TournamentManage() {
     }
   };
   const deleteMsg = async (mid) => {
-    if (!selectedGroup || !mid) return;
+    if (!selectedGroup || !mid || deleted) return;
     try {
       await tournamentsAPI.deleteGroupRoomMessage(id, selectedGroup._id, mid);
       await refreshMessages();
@@ -243,7 +253,7 @@ export default function TournamentManage() {
 
   const openRename = (g) => { setSelectedGroup(g); setRenameValue(g?.name || ''); setRenameOpen(true); };
   const doRename = async () => {
-    if (!selectedGroup || !renameValue.trim()) return;
+    if (!selectedGroup || !renameValue.trim() || deleted) return;
     try {
       await tournamentsAPI.renameGroup(id, selectedGroup._id, renameValue.trim());
       setRenameOpen(false);
@@ -255,6 +265,7 @@ export default function TournamentManage() {
   };
 
   const moveSelectedPlayers = async () => {
+    if (deleted) return;
     const memberIds = Object.entries(selectedPlayers).filter(([, v]) => v).map(([k]) => k);
     if (!memberIds.length) return toast.error('Pick at least 1 player');
     if (!moveToGroupId) return toast.error('Select a target group');
@@ -275,7 +286,7 @@ export default function TournamentManage() {
   };
 
   const removePlayerFromSelectedGroup = async (uid) => {
-    if (!selectedGroup) return toast.error('Open a group first');
+    if (!selectedGroup || deleted) return toast.error('Open a group first');
     try {
       await tournamentsAPI.removeGroupMember(id, selectedGroup._id, uid);
       await load();
@@ -286,6 +297,7 @@ export default function TournamentManage() {
   };
 
   const saveTournament = async () => {
+    if (deleted) return;
     try {
       await tournamentsAPI.update(id, {
         title: tForm.title,
@@ -300,18 +312,70 @@ export default function TournamentManage() {
       toast.error(e?.response?.data?.message || 'Update failed');
     }
   };
-  const deleteTournament = async () => {
-    if (!window.confirm('Delete this tournament? This cannot be undone.')) return;
+
+  /**
+   * SAFE DELETE:
+   * 1) delete each group's room (best-effort)
+   * 2) delete each group (best-effort)
+   * 3) delete the tournament
+   * 4) clear UI and redirect
+   */
+  const deleteTournamentSafely = async () => {
+    if (deleted || deleting) return;
+
+    const confirm = window.confirm(
+      'Delete this tournament?\n\nThis will:\n• Delete all group chat rooms\n• Delete all groups\n• Delete the tournament itself\n\nThis cannot be undone.'
+    );
+    if (!confirm) return;
+
+    setDeleting(true);
     try {
+      // ensure we have group list
+      let currentGroups = groups;
+      if (!currentGroups?.length) {
+        const g = await tournamentsAPI.listGroups(id);
+        currentGroups =
+          Array.isArray(g?.data?.groups) ? g.data.groups :
+          Array.isArray(g?.groups) ? g.groups : [];
+      }
+
+      // 1) delete rooms (best-effort)
+      for (const g of currentGroups) {
+        try {
+          await tournamentsAPI.deleteGroupRoom(id, g._id);
+        } catch {
+          /* ignore */
+        }
+      }
+
+      // 2) delete groups (best-effort)
+      for (const g of currentGroups) {
+        try {
+          await tournamentsAPI.deleteGroup(id, g._id);
+        } catch {
+          /* ignore */
+        }
+      }
+
+      // 3) delete tournament
       await tournamentsAPI.deleteTournament(id);
+
+      // 4) local cleanup + redirect
+      setDeleted(true);
+      setParticipants([]); setGroups([]); setSelectedGroup(null);
+      setMessages([]); setSelectedPlayers({});
       toast.success('Tournament deleted');
+      navigate('/tournaments', { replace: true });
     } catch (e) {
-      toast.error(e?.response?.data?.message || 'Delete failed');
+      console.error('deleteTournamentSafely error:', e);
+      toast.error(e?.response?.data?.message || 'Failed to delete tournament');
+    } finally {
+      setDeleting(false);
     }
   };
 
   const deleteRoomNow = async () => {
-    if (!selectedGroup) return;
+    if (!selectedGroup || deleted) return;
     if (!window.confirm(`Delete room for "${selectedGroup.name}"? Messages will be removed.`)) return;
     try {
       await tournamentsAPI.deleteGroupRoom(id, selectedGroup._id);
@@ -327,6 +391,7 @@ export default function TournamentManage() {
     setSelectedPlayers((m) => ({ ...m, [u]: !m[u] }));
 
   const createManualGroup = async () => {
+    if (deleted) return;
     try {
       const memberIds = Object.entries(selectedPlayers).filter(([, v]) => v).map(([k]) => k);
       if (!memberIds.length) return toast.error('Pick at least 1 player');
@@ -389,22 +454,26 @@ export default function TournamentManage() {
       {/* Header */}
       <div className="mb-6 flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Tournament Manager</h1>
-          <p className="text-sm text-white/60">Group players, run rooms, and message teams.</p>
+          <h1 className="text-2xl font-bold">
+            {deleted ? 'Tournament (deleted)' : 'Tournament Manager'}
+          </h1>
+          <p className="text-sm text-white/60">
+            {deleted ? 'This tournament was removed.' : 'Group players, run rooms, and message teams.'}
+          </p>
         </div>
         <div className="flex items-center gap-2">
-          <button className="btn-secondary" onClick={() => setTEditOpen(true)}>
+          <button className="btn-secondary" onClick={() => setTEditOpen(true)} disabled={deleted}>
             <Edit3 className="h-4 w-4 mr-2" /> Edit
           </button>
-          <button className="btn-danger" onClick={deleteTournament}>
-            <Trash2 className="h-4 w-4 mr-2" /> Delete
+          <button className="btn-danger" onClick={deleteTournamentSafely} disabled={deleted || deleting}>
+            <Trash2 className="h-4 w-4 mr-2" /> {deleting ? 'Deleting…' : 'Delete Tournament'}
           </button>
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr_1fr]">
+      <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr_1fr] opacity-100">
         {/* Participants */}
-        <section className="card relative">
+        <section className={`card relative ${deleted ? 'pointer-events-none opacity-50' : ''}`}>
           <div className="mb-4 flex items-center justify-between gap-2">
             <h3 className="font-semibold flex items-center gap-2">
               <Users className="h-4 w-4" /> Participants
@@ -419,6 +488,7 @@ export default function TournamentManage() {
                   placeholder="Search"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
+                  disabled={deleted}
                 />
               </div>
 
@@ -427,14 +497,15 @@ export default function TournamentManage() {
                 value={listFilter}
                 onChange={(e) => setListFilter(e.target.value)}
                 title="Filter participants"
+                disabled={deleted}
               >
                 <option value="all">All teams</option>
                 <option value="group" disabled={!selectedGroup}>Selected group</option>
                 <option value="ungrouped">Ungrouped only</option>
               </select>
 
-              <button className="btn-secondary w-40" onClick={makeAutoGroups} title="Auto-create groups of 16">
-                <Wand2 className="h-4 w-4  " /> Auto (16 teams)
+              <button className="btn-secondary w-40" onClick={makeAutoGroups} title="Auto-create groups of 16" disabled={deleted}>
+                <Wand2 className="h-4 w-4" /> Auto (16 teams)
               </button>
             </div>
           </div>
@@ -445,11 +516,11 @@ export default function TournamentManage() {
               Selected: <span className="font-medium">{selectedCount}</span>
             </div>
             <div className="flex items-center gap-2">
-              <select className="input" value={moveToGroupId} onChange={(e) => setMoveToGroupId(e.target.value)}>
+              <select className="input" value={moveToGroupId} onChange={(e) => setMoveToGroupId(e.target.value)} disabled={deleted}>
                 <option value="">Move selected →</option>
                 {groups.map(g => <option key={g._id} value={g._id}>{g.name}</option>)}
               </select>
-              <button className="btn-secondary" onClick={moveSelectedPlayers} disabled={!moveToGroupId || !selectedCount}>
+              <button className="btn-secondary" onClick={moveSelectedPlayers} disabled={!moveToGroupId || !selectedCount || deleted}>
                 Move
               </button>
             </div>
@@ -461,6 +532,7 @@ export default function TournamentManage() {
               className={`px-3 py-1 rounded ${view === 'list' ? 'bg-gaming-purple/20 text-gaming-purple' : 'bg-white/5 text-white/70'}`}
               onClick={() => setView('list')}
               title="List view"
+              disabled={deleted}
             >
               <Layers className="h-4 w-4" />
             </button>
@@ -468,19 +540,20 @@ export default function TournamentManage() {
               className={`px-3 py-1 rounded ${view === 'grid' ? 'bg-gaming-purple/20 text-gaming-purple' : 'bg-white/5 text-white/70'}`}
               onClick={() => setView('grid')}
               title="Grid view"
+              disabled={deleted}
             >
               <Grid className="h-4 w-4" />
             </button>
 
             <div className="ml-auto">
-              <button className="btn-secondary" onClick={() => setManualOpen(v => !v)}>
+              <button className="btn-secondary" onClick={() => setManualOpen(v => !v)} disabled={deleted}>
                 <Plus className="h-4 w-4 mr-2" /> Create group manually
               </button>
             </div>
           </div>
 
           {/* Manual group drawer */}
-          {manualOpen && (
+          {manualOpen && !deleted && (
             <div className="mb-4 rounded-lg border border-white/10 bg-white/5 p-3">
               <div className="flex items-center gap-2">
                 <input
@@ -521,6 +594,7 @@ export default function TournamentManage() {
                         className="accent-gaming-purple"
                         checked={!!selectedPlayers[uId]}
                         onChange={() => toggleSel(uId)}
+                        disabled={deleted}
                       />
                       {uObj?.avatarUrl ? (
                         <img src={uObj.avatarUrl} alt="" className="h-8 w-8 rounded-full object-cover" />
@@ -544,6 +618,7 @@ export default function TournamentManage() {
                         type="button"
                         className="text-xs underline text-gaming-cyan hover:opacity-80"
                         onClick={() => { setTeamModalData(p); setShowTeamModal(true); }}
+                        disabled={deleted}
                       >
                         Details
                       </button>
@@ -554,6 +629,7 @@ export default function TournamentManage() {
                             className="text-red-400 hover:text-red-300"
                             title="Remove from this group"
                             onClick={() => removePlayerFromSelectedGroup(uId)}
+                            disabled={deleted}
                           >
                             <Scissors className="h-4 w-4" />
                           </button>
@@ -563,6 +639,7 @@ export default function TournamentManage() {
                           className="text-red-400 hover:text-red-300"
                           title="Remove from tournament"
                           onClick={() => removeFromTournament(uId)}
+                          disabled={deleted}
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>
@@ -593,6 +670,7 @@ export default function TournamentManage() {
                       className="mr-1 accent-gaming-purple"
                       checked={!!selectedPlayers[uId]}
                       onChange={() => toggleSel(uId)}
+                      disabled={deleted}
                     />
                     {uObj?.avatarUrl ? (
                       <img src={uObj.avatarUrl} alt="" className="h-8 w-8 rounded-full object-cover" />
@@ -614,6 +692,7 @@ export default function TournamentManage() {
                       type="button"
                       className="text-xs underline text-gaming-cyan hover:opacity-80 mr-2"
                       onClick={(e) => { e.preventDefault(); setTeamModalData(p); setShowTeamModal(true); }}
+                      disabled={deleted}
                     >
                       Details
                     </button>
@@ -624,6 +703,7 @@ export default function TournamentManage() {
                         className="text-red-400 hover:text-red-300"
                         title="Remove from this group"
                         onClick={(e) => { e.preventDefault(); removePlayerFromSelectedGroup(uId); }}
+                        disabled={deleted}
                       >
                         <Scissors className="h-4 w-4" />
                       </button>
@@ -633,6 +713,7 @@ export default function TournamentManage() {
                       className="text-red-400 hover:text-red-300"
                       title="Remove from tournament"
                       onClick={(e) => { e.preventDefault(); removeFromTournament(uId); }}
+                      disabled={deleted}
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
@@ -646,7 +727,7 @@ export default function TournamentManage() {
         </section>
 
         {/* Groups */}
-        <section className="card">
+        <section className={`card ${deleted ? 'pointer-events-none opacity-50' : ''}`}>
           <div className="mb-4 flex items-center justify-between">
             <h2 className="font-semibold flex items-center gap-2">
               <Hash className="h-4 w-4" /> Groups
@@ -684,6 +765,7 @@ export default function TournamentManage() {
                         className="text-white/80 hover:text-white"
                         title="Rename group"
                         onClick={(e) => { e.stopPropagation(); openRename(g); }}
+                        disabled={deleted}
                       >
                         <Edit3 className="h-4 w-4" />
                       </button>
@@ -706,6 +788,7 @@ export default function TournamentManage() {
                             toast.error(err?.response?.data?.message || 'Delete failed');
                           }
                         }}
+                        disabled={deleted}
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
@@ -720,20 +803,20 @@ export default function TournamentManage() {
         </section>
 
         {/* Room / Chat (sticky) */}
-        <aside className="card lg:sticky lg:top-6 h-fit">
+        <aside className={`card lg:sticky lg:top-6 h-fit ${deleted ? 'pointer-events-none opacity-50' : ''}`}>
           <div className="mb-3 flex items-center justify-between">
             <h2 className="font-semibold flex items-center gap-2">
               <MessageSquare className="h-4 w-4" /> Group Room
             </h2>
             <div className="flex gap-2">
-              <button className="btn-secondary" onClick={createRoomNow} disabled={!selectedGroup}>
+              <button className="btn-secondary" onClick={createRoomNow} disabled={!selectedGroup || deleted}>
                 Ensure Room
               </button>
-              <button className="btn-danger" onClick={deleteRoomNow} disabled={!selectedGroup} title="Delete this group's room">
+              <button className="btn-danger" onClick={deleteRoomNow} disabled={!selectedGroup || deleted} title="Delete this group's room">
                 Delete Room
               </button>
               <input ref={fileRef} type="file" accept="image/*" onChange={sendImage} className="hidden" />
-              <button className="btn-secondary" onClick={() => fileRef.current?.click()} disabled={!selectedGroup} title="Upload Image">
+              <button className="btn-secondary" onClick={() => fileRef.current?.click()} disabled={!selectedGroup || deleted} title="Upload Image">
                 <Upload className="h-4 w-4" />
               </button>
             </div>
@@ -768,8 +851,8 @@ export default function TournamentManage() {
 
                   {m.type !== 'deleted' && (
                     <div className="mt-2 flex gap-3 justify-end text-xs">
-                      <button className="text-white/80 hover:text-white underline" onClick={() => startEditMsg(m)}>Edit</button>
-                      <button className="text-red-300 hover:text-red-200 underline" onClick={() => deleteMsg(m._id)}>Delete</button>
+                      <button className="text-white/80 hover:text-white underline" onClick={() => startEditMsg(m)} disabled={deleted}>Edit</button>
+                      <button className="text-red-300 hover:text-red-200 underline" onClick={() => deleteMsg(m._id)} disabled={deleted}>Delete</button>
                     </div>
                   )}
                 </div>
@@ -785,8 +868,9 @@ export default function TournamentManage() {
               onChange={(e) => setText(e.target.value)}
               className="input flex-1"
               placeholder={selectedGroup ? `Message ${selectedGroup.name}…` : 'Open a group to chat…'}
+              disabled={deleted}
             />
-            <button className="btn-primary" disabled={!selectedGroup || !text.trim()}>
+            <button className="btn-primary" disabled={!selectedGroup || !text.trim() || deleted}>
               <Send className="h-4 w-4" />
             </button>
           </form>

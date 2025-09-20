@@ -75,21 +75,26 @@ const userSchema = new mongoose.Schema(
     loginOtp: { type: LoginOtpSchema, default: null },
 
     isActive: { type: Boolean, default: true },
+    isPasswordHashed: { type: Boolean, default: false },
   },
   { timestamps: true }
 );
 
-// Hash password on save if modified
-userSchema.pre("save", async function (next) {
-  if (!this.isModified("password")) return next();
-  try {
-    const salt = await bcrypt.genSalt(10);
-    this.password = await bcrypt.hash(this.password, salt);
-    next();
-  } catch (err) {
-    next(err);
-  }
+// before:
+userSchema.pre('save', async function(next) {
+  if (!this.isModified('password')) return next();
+  this.password = await bcrypt.hash(this.password, 10);
+  next();
 });
+
+// after (skip if we're injecting an already-hashed value)
+userSchema.pre('save', async function(next) {
+  if (!this.isModified('password')) return next();
+  if (this.isPasswordHashed) return next();
+  this.password = await bcrypt.hash(this.password, 10);
+  next();
+});
+
 
 userSchema.methods.comparePassword = async function (pwd) {
   return bcrypt.compare(pwd, this.password);
