@@ -1,4 +1,4 @@
-// frontend/src/context/SocketProvider.jsx
+// src/context/SocketProvider.jsx
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { io } from 'socket.io-client';
 import { useAuth } from './AuthContext';
@@ -12,43 +12,37 @@ export const SocketProvider = ({ children }) => {
   const [socket, setSocket] = useState(null);
   const [connected, setConnected] = useState(false);
 
-  // Toggle sockets via env if needed
+  // Allow disabling via env if backend not ready
   const ENABLE_SOCKET = (import.meta.env.VITE_ENABLE_SOCKET ?? 'true') !== 'false';
 
-  // Use your Render backend in prod; localhost in dev
+  // Prefer env; dev fallback only
   const SOCKET_URL = useMemo(() => {
-    return (
-      import.meta.env.VITE_SOCKET_URL ||
-      (import.meta.env.DEV
-        ? 'http://localhost:4000'
-        : 'https://esportsregistration2.onrender.com')
-    );
+    const envUrl = import.meta.env.VITE_SOCKET_URL;
+    if (envUrl) return envUrl.replace(/\/+$/, '');
+    return import.meta.env.DEV ? 'http://localhost:4000' : 'https://esportsregistration2.onrender.com';
   }, []);
 
   useEffect(() => {
-    // Close if disabled or user is logged out
-    if (!ENABLE_SOCKET || !isAuthenticated) {
+    if (!ENABLE_SOCKET || !isAuthenticated || !SOCKET_URL) {
       if (socket) {
         try { socket.close(); } catch {}
-        setSocket(null);
-        setConnected(false);
       }
+      setSocket(null);
+      setConnected(false);
       return;
     }
 
     const token = getToken();
 
-    // Always connect directly to backend domain (Vercel won't tunnel WS)
     const s = io(SOCKET_URL, {
       path: '/socket.io',
-      // Allow polling fallback to get through cold starts / proxies
-      transports: ['websocket', 'polling'],
+      transports: ['websocket', 'polling'], // allow fallback for cold starts/proxies
       auth: token ? { token: `Bearer ${token}` } : undefined,
       reconnection: true,
       reconnectionAttempts: 10,
       reconnectionDelay: 1000,
       timeout: 20000, // handshake timeout
-      withCredentials: false, // set true only if server uses cookies cross-site
+      withCredentials: false, // set true only if server uses cookie auth cross-site
     });
 
     s.on('connect', () => {
