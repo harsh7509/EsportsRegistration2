@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Users, MessageSquare, Edit, Trash2, Send, Image as ImageIcon, X } from 'lucide-react';
 import { scrimsAPI, uploadAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { NormalizeImageUrl } from '../utils/img.js';
 import toast from 'react-hot-toast';
 
 const ScrimManagement = ({ scrim, onScrimUpdate }) => {
@@ -181,7 +182,7 @@ const ScrimManagement = ({ scrim, onScrimUpdate }) => {
                       <div className="flex items-center gap-3">
                         {booking.playerId?.avatarUrl ? (
                           <img
-                            src={booking.playerId.avatarUrl}
+                            src={NormalizeImageUrl(booking.playerId.avatarUrl)}
                             alt=""
                             className="h-10 w-10 rounded-full object-cover"
                           />
@@ -423,7 +424,7 @@ function MessageBubble({ message, isImage }) {
 
       {isImage && (
         <img
-          src={message.imageUrl}
+          src={NormalizeImageUrl(message.imageUrl)}
           alt="Shared"
           className="mt-2 max-w-xs rounded-lg cursor-pointer"
           onClick={() => window.open(message.imageUrl, '_blank')}

@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { uploadAPI } from '../services/api';
+import { NormalizeImageUrl } from '../utils/img';
 
 const navLinks = [
   { to: '/scrims', label: 'Scrims' },
@@ -113,7 +114,7 @@ const Navbar = () => {
                 >
                   {user.avatarUrl ? (
                     <img
-                      src={user.avatarUrl}
+                      src={NormalizeImageUrl(user.avatarUrl)}
                       alt={user.name}
                       className="w-8 h-8 rounded-full object-cover ring-2 ring-gray-700"
                     />

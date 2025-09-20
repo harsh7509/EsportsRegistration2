@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { X, Send, Upload, Users as UsersIcon, RefreshCcw } from 'lucide-react';
 import { tournamentsAPI } from '../services/api';
 import toast from 'react-hot-toast';
+import { NormalizeImageUrl } from '../utils/img';
 
 export default function PlayerGroupRoomModal({ open, onClose, tournamentId }) {
   const [loading, setLoading] = useState(true);
@@ -297,7 +298,7 @@ function MessageBubble({ m }) {
           {m.type === 'image' && m.imageUrl ? (
             <>
               {m.content ? <div className="text-sm mb-1">{m.content}</div> : null}
-              <img src={m.imageUrl} alt="" className="rounded max-w-full" />
+              <img src={normalizeImageUrl(m.imageUrl)} alt="" className="rounded max-w-full" />
             </>
           ) : (
             <div className="text-sm whitespace-pre-wrap">{m.content}</div>

@@ -1,43 +1,43 @@
 // backend/src/controllers/uploadController.js
-import path from 'path';
 import fs from 'fs';
-import cloudinary from '../utils/cloudinary.js';
+import path from 'path';
+import { cloudinaryEnabled, uploadBufferToCloudinary } from '../utils/cloudinary.js';
 
-// This controller assumes you've wired a route like:
-// router.post('/image', authenticate, upload.single('image'), uploadImage);
+// Builds an absolute URL for local fallback (dev only)
+function localFileUrl(req, relPath) {
+  const proto = req.headers['x-forwarded-proto'] || req.protocol;
+  const host = req.headers['x-forwarded-host'] || req.get('host');
+  return `${proto}://${host}${relPath.startsWith('/') ? relPath : `/${relPath}`}`;
+}
 
 export const uploadImage = async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
 
-    // If Cloudinary is configured, use it
-    if (cloudinary?.config && cloudinary.config().api_key) {
-      const streamifier = (await import('streamifier')).default;
-      const uploadStream = (buffer) =>
-        new Promise((resolve, reject) => {
-          const stream = cloudinary.uploader.upload_stream(
-            { folder: 'esports_avatars', resource_type: 'image' },
-            (error, result) => (error ? reject(error) : resolve(result))
-          );
-          streamifier.createReadStream(buffer).pipe(stream);
-        });
-
-      const result = await uploadStream(req.file.buffer);
-      return res.json({ imageUrl: result.secure_url });
+    // Prefer Cloudinary when configured (typical for production)
+    if (cloudinaryEnabled) {
+      const result = await uploadBufferToCloudinary(req.file.buffer, {
+        folder: 'esports/images',
+        // optional: public_id derived from filename (without extension)
+        public_id: req.file.originalname?.split(/[/\\]/).pop()?.replace(/\.[^.]+$/, ''),
+      });
+      return res.json({ imageUrl: result.secure_url, publicId: result.public_id });
     }
 
-    // Local fallback
+    // --- DEV ONLY FALLBACK (local disk) ---
     const uploadsDir = path.join(process.cwd(), 'uploads', 'images');
     if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
+    // sanitize filename
+    const original = req.file.originalname?.split(/[/\\]/).pop() || `image-${Date.now()}`;
     const ext = (req.file.mimetype && req.file.mimetype.split('/')[1]) || 'jpg';
-    const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-    const filepath = path.join(uploadsDir, filename);
-    await fs.promises.writeFile(filepath, req.file.buffer);
+    const safeName = `${Date.now()}-${original.replace(/[^\w.\-]+/g, '_')}.${ext}`;
+    const fullPath = path.join(uploadsDir, safeName);
 
-    const base = `${req.protocol}://${req.get('host')}`;
-    const imageUrl = `${base}/uploads/images/${filename}`;
-    return res.json({ imageUrl });
+    await fs.promises.writeFile(fullPath, req.file.buffer);
+    const publicPath = `/uploads/images/${safeName}`;
+
+    return res.json({ imageUrl: localFileUrl(req, publicPath) });
   } catch (err) {
     console.error('uploadImage error:', err);
     res.status(500).json({ message: 'Failed to upload image' });

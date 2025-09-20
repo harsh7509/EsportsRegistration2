@@ -17,6 +17,7 @@ import {
 import { adminAPI, authAPI, uploadAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
+import { NormalizeImageUrl } from '../utils/img';
 import { Link } from 'react-router-dom';
 import { KycReviewPanel } from './AdminKycReview';
 
@@ -544,7 +545,7 @@ const AdminPanel = () => {
             <div className="flex items-center gap-6 mb-6">
               <div className="relative">
                 {profileData.avatar ? (
-                  <img src={profileData.avatar} alt="Profile" className="w-24 h-24 rounded-full object-cover ring-2 ring-white/10" />
+                  <img src={NormalizeImageUrl(profileData.avatar)} alt="Profile" className="w-24 h-24 rounded-full object-cover ring-2 ring-white/10" />
                 ) : (
                   <div className="w-24 h-24 bg-gray-700 rounded-full grid place-items-center ring-2 ring-white/10">
                     <User className="text-white/70" />
@@ -796,7 +797,7 @@ const AdminPanel = () => {
                 <div key={promo._id} className="card hover:shadow-lg transition">
                   {promo.imageUrl && (
                     <img
-                      src={promo.imageUrl}
+                      src={NormalizeImageUrl(promo.imageUrl)}
                       alt={promo.title}
                       className="w-full h-32 object-cover rounded-lg mb-4 ring-1 ring-white/10"
                     />
@@ -1133,7 +1134,7 @@ const AdminPanel = () => {
                   {promoForm.imageUrl && (
                     <img
                       alt="promo preview"
-                      src={promoForm.imageUrl}
+                      src={NormalizeImageUrl(promoForm.imageUrl)}
                       className="w-full h-32 object-cover rounded border border-gray-700"
                     />
                   )}
