@@ -1,0 +1,6 @@
+# Allow all web crawlers to access the site
+User-agent: *
+Allow: /
+
+# Provide the location of the sitemap
+Sitemap: https://thearenapulse.xyz/sitemap.xml

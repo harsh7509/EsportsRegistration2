@@ -54,20 +54,14 @@ const Navbar = () => {
     'text-white bg-gradient-to-r from-gaming-purple/30 to-gaming-cyan/20 hover:bg-gaming-purple/40';
 
   return (
-    <nav className="backdrop-blur supports-[backdrop-filter]:bg-gaming-dark/70 bg-gaming-dark/90 border-b border-gray-800 sticky top-0 z-40">
+    <nav className="backdrop-blur supports-[backdrop-filter]:bg-transparent bg-transparent border-b border-gray-800 sticky top-0 z-40">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
 
         {/* Top Row */}
         <div className="flex justify-between items-center h-16">
           {/* Logo */}
           <Link to="/" className="group flex items-center space-x-2">
-            <div className="relative">
-              <span className="absolute -inset-1 rounded-xl bg-gaming-purple/20 blur-md opacity-0 group-hover:opacity-100 transition" />
-              <Gamepad2 className="relative h-8 w-8 text-gaming-purple" />
-            </div>
-            <span className="text-xl font-bold bg-gradient-to-r from-white via-gaming-purple to-gaming-cyan bg-clip-text text-transparent">
-              Arena Pulse
-            </span>
+            <img src='/logo2.png' className='h-16'/>
           </Link>
 
           {/* Desktop Nav */}
