@@ -21,6 +21,8 @@ export const createScrimValidation = [
 ];
 
 const TZ = 'Asia/Kolkata';
+const isValidDate = (d) => d instanceof Date && !isNaN(d.getTime());
+const todayStartTZ = () => moment.tz(TZ).startOf('day');
 
 
 // ---------- Delete Scrim ----------
@@ -119,12 +121,31 @@ const prizePoolN  = Number(prizePool) || 0;
       };
     }
 
+    // ----- guards: block past dates & bad ordering -----
+if (!isValidDate(normalizedTimeSlot.start) || !isValidDate(normalizedTimeSlot.end)) {
+  return res.status(400).json({ message: 'Start and end time are required and must be valid' });
+}
+
+const startM = moment(normalizedTimeSlot.start);
+const endM   = moment(normalizedTimeSlot.end);
+
+// past-day block (strictly today or future in Asia/Kolkata)
+if (startM.isBefore(todayStartTZ())) {
+  return res.status(400).json({ message: 'Date cannot be in the past' });
+}
+
+// end after start
+if (!endM.isAfter(startM)) {
+  return res.status(400).json({ message: 'End time must be after start time' });
+}
+
+
     const scrim = new Scrim({
       title,
       description,
       game,
       platform,
-      date: date ? moment.tz(date, 'YYYY-MM-DD', TZ).toDate() : (normalizedTimeSlot.start || new Date()),
+      date: moment(startM).startOf('day').toDate(),
       timeSlot: {
         start: normalizedTimeSlot.start,
         end: normalizedTimeSlot.end,
@@ -424,6 +445,23 @@ export const updateScrim = async (req, res) => {
       if (ts.end) scrim.timeSlot.end = moment.tz(ts.end, TZ).toDate();
     }
     if (updates.date) scrim.date = moment.tz(updates.date, 'YYYY-MM-DD', TZ).toDate();
+    // ----- guards on update -----
+const startG = scrim.timeSlot?.start ? moment(scrim.timeSlot.start) : null;
+const endG   = scrim.timeSlot?.end ? moment(scrim.timeSlot.end) : null;
+
+if (!startG || !startG.isValid() || !endG || !endG.isValid()) {
+  return res.status(400).json({ message: 'Start and end time are required and must be valid' });
+}
+if (startG.isBefore(todayStartTZ())) {
+  return res.status(400).json({ message: 'Date cannot be in the past' });
+}
+if (!endG.isAfter(startG)) {
+  return res.status(400).json({ message: 'End time must be after start time' });
+}
+
+// keep scrim.date = start-of-day in TZ (optional but consistent)
+scrim.date = moment(startG).startOf('day').toDate();
+
 
     const writable = [
       'title',

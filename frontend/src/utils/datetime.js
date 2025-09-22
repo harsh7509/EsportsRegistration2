@@ -21,6 +21,20 @@ export function formatDateTime(value, opts = {}) {
   });
 }
 
+export const formatDateSafe = (v, opts) => {
+  if (!v) return '—';
+  const d = new Date(v);
+  if (isNaN(d.getTime())) return '—';
+  return new Intl.DateTimeFormat(undefined, opts ?? { dateStyle: 'medium' }).format(d);
+};
+
+export const formatDateTimeSafe = (v, opts) => {
+  if (!v) return '—';
+  const d = new Date(v);
+  if (isNaN(d.getTime())) return '—';
+  return new Intl.DateTimeFormat(undefined, opts ?? { dateStyle: 'medium', timeStyle: 'short' }).format(d);
+};
+
 export function formatTimeRange(start, end) {
   const s = toDate(start), e = toDate(end);
   if (!s && !e) return 'TBA';

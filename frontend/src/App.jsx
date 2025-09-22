@@ -48,9 +48,9 @@ function App() {
   return (
     <div className="min-h-screen bg-gaming-dark text-white">
       {/* TEMP heartbeat: proves the shell rendered; remove later */}
-      <div style={{ position: 'fixed', bottom: 12, right: 12, fontSize: 12, opacity: 0.7, zIndex: 10 }}>
+      {/* <div style={{ position: 'fixed', bottom: 12, right: 12, fontSize: 12, opacity: 0.7, zIndex: 10 }}>
         UI loaded ✅
-      </div>
+      </div> */}
 
       <Suspense fallback={<Fallback label="Loading navbar…" />}>
         <ErrorBoundary>

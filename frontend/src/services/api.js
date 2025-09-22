@@ -28,7 +28,7 @@ export const API_BASE = `${ORIGIN}/api`;
 export const api = axios.create({
   baseURL: API_BASE,
   // Set to true ONLY if you actually use cookies cross-site (SameSite=None; Secure)
-  withCredentials: false,
+  withCredentials: true,
   headers: { 'Content-Type': 'application/json' },
 });
 

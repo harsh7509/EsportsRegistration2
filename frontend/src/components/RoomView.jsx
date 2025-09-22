@@ -77,7 +77,7 @@ const RoomView = ({ scrimId, isOwner }) => {
     if (!newMessage.trim()) return;
     try {
       if (!resolvedScrimId) return;
-+ await scrimsAPI.sendRoomMessage(resolvedScrimId, { content: newMessage, type: 'text' });  
+ await scrimsAPI.sendRoomMessage(resolvedScrimId, { content: newMessage, type: 'text' });  
       setNewMessage('');
       fetchMessages();
       toast.success('Message sent');

@@ -170,23 +170,29 @@ export default function PlayerGroupRoomModal({ open, onClose, tournamentId }) {
   };
 
   const sendImage = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file || !hasRoom) return;
-    try {
-      // Wire this to your upload API, then send image message
-      toast('Image upload not wired yet. Upload and then call sendMyGroupRoomMessage({ type:"image", imageUrl })');
-      // Example:
-      // const up = await uploadAPI.uploadImage(file);
-      // await tournamentsAPI.sendMyGroupRoomMessage(tournamentId, {
-      //   type: 'image',
-      //   imageUrl: up.data.imageUrl,
-      //   content: file.name,
-      // });
-      // await refreshMessages();
-    } finally {
-      if (fileRef.current) fileRef.current.value = '';
-    }
-  };
+  const file = e.target.files?.[0];
+  if (!file || !hasRoom) return;
+
+  try {
+    const up = await uploadAPI.uploadImage(file);
+    const imageUrl = up?.data?.secure_url || up?.data?.imageUrl; // server response
+    if (!imageUrl) throw new Error("No image URL from server");
+
+    await tournamentsAPI.sendMyGroupRoomMessage(tournamentId, {
+      type: "image",
+      imageUrl,
+      content: file.name,
+    });
+    await refreshMessages();
+    toast.success("Image uploaded");
+  } catch (err) {
+    console.error(err);
+    toast.error("Failed to upload image");
+  } finally {
+    if (fileRef.current) fileRef.current.value = "";
+  }
+};
+
 
   // Auto-group 16 (for org/admin paths)
   const autoGroup16 = async () => {
@@ -238,14 +244,14 @@ export default function PlayerGroupRoomModal({ open, onClose, tournamentId }) {
 
           <div className="flex items-center gap-2">
             {/* Auto(16) (optional) */}
-            <button
+            {/* <button
               onClick={autoGroup16}
               disabled={autoBusy || loading}
               className={btnPrimary}
               title="Auto create/fill group with 16 teams"
             >
               {autoBusy ? 'Auto…' : 'Auto (16)'}
-            </button>
+            </button> */}
 
             <button
               onClick={refreshMessages}
@@ -341,7 +347,7 @@ export default function PlayerGroupRoomModal({ open, onClose, tournamentId }) {
               onChange={sendImage}
               className="hidden"
             />
-            <button
+            {/* <button
               type="button"
               onClick={() => fileRef.current?.click()}
               disabled={!hasRoom || loading}
@@ -349,7 +355,7 @@ export default function PlayerGroupRoomModal({ open, onClose, tournamentId }) {
               title="Upload image"
             >
               <Upload className="h-4 w-4" />
-            </button>
+            </button> */}
 
             <button
               type="submit"

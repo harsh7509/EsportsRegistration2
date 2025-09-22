@@ -35,35 +35,47 @@ const CreateScrimModal = ({ isOpen, onClose, onScrimCreated }) => {
     }
   };
 
-  const todayStr = useMemo(() => {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    return d.toISOString().split('T')[0];
-  }, []);
+  const todayStr = useMemo(() => new Date().toLocaleDateString('en-CA'), []);
 
   const validate = useMemo(() => {
-    const e = {};
-    if (!formData.title.trim()) e.title = 'Title is required';
-    if (!formData.game.trim()) e.game = 'Game is required';
-    if (!formData.date) e.date = 'Pick a date';
-    if (!formData.timeSlot.start) e.start = 'Start time is required';
-    if (!formData.timeSlot.end) e.end = 'End time is required';
-    if (Number(formData.capacity) < 2) e.capacity = 'Minimum capacity is 2';
+  const e = {};
 
-    if (formData.timeSlot.start && formData.timeSlot.end && formData.date) {
-      const [sh, sm] = formData.timeSlot.start.split(':').map((x) => parseInt(x, 10));
-      const [eh, em] = formData.timeSlot.end.split(':').map((x) => parseInt(x, 10));
-      const d = new Date(formData.date);
-      const s = new Date(d); s.setHours(sh || 0, sm || 0, 0, 0);
-      const eEnd = new Date(d); eEnd.setHours(eh || 0, em || 0, 0, 0);
-      if (!(eEnd > s)) e.end = 'End time must be after start time';
+  // basic requireds
+  if (!formData.title.trim()) e.title = 'Title is required';
+  if (!formData.game.trim()) e.game = 'Game is required';
+  if (!formData.date) e.date = 'Pick a date';
+  if (!formData.timeSlot.start) e.start = 'Start time is required';
+  if (!formData.timeSlot.end) e.end = 'End time is required';
+  if (Number(formData.capacity) < 2) e.capacity = 'Minimum capacity is 2';
+
+  // ⛔ past-day guard (local)
+  if (formData.date) {
+    const [y, m, d] = formData.date.split('-').map(Number); // "YYYY-MM-DD"
+    const selected = new Date(y, (m - 1), d, 0, 0, 0, 0);   // local midnight
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);                              // local midnight today
+    if (selected < today) {
+      e.date = 'Date cannot be in the past';
     }
+  }
 
-    if (formData.entryFee !== '' && Number(formData.entryFee) < 0) e.entryFee = 'Cannot be negative';
-    if (formData.prizePool !== '' && Number(formData.prizePool) < 0) e.prizePool = 'Cannot be negative';
+  // time order check (local)
+  if (formData.timeSlot.start && formData.timeSlot.end && formData.date) {
+    const [y, m, d] = formData.date.split('-').map(Number);
+    const [sh, sm] = formData.timeSlot.start.split(':').map(n => parseInt(n || '0', 10));
+    const [eh, em] = formData.timeSlot.end.split(':').map(n => parseInt(n || '0', 10));
+    const start = new Date(y, (m - 1), d, sh, sm, 0, 0);
+    const end   = new Date(y, (m - 1), d, eh, em, 0, 0);
+    if (!(end > start)) e.end = 'End time must be after start time';
+  }
 
-    return e;
-  }, [formData]);
+  // numeric guards
+  if (formData.entryFee !== '' && Number(formData.entryFee) < 0) e.entryFee = 'Cannot be negative';
+  if (formData.prizePool !== '' && Number(formData.prizePool) < 0) e.prizePool = 'Cannot be negative';
+
+  return e;
+}, [formData,todayStr]);
+
 
   // 2) Conditional return AFTER all hooks
   if (!isOpen) return null;
