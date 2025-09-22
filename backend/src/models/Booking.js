@@ -7,7 +7,7 @@ const bookingSchema = new mongoose.Schema(
     playerId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
 
     playerInfo: {
-      ign: { type: String },   // in-game name
+      ign: { type: String, required: true },   // in-game name
       rank: { type: String },
       team: { type: String },
     },
@@ -21,7 +21,7 @@ const bookingSchema = new mongoose.Schema(
     paid: { type: Boolean, default: false }, // ✅ mark after successful payment
     slotNumber: { type: Number }, // optional: if you want to assign seat numbers
 
-    createdAt: { type: Date, default: Date.now },
+    bookedAt: { type: Date, default: Date.now },
   },
   { timestamps: true }
 );

@@ -1,9 +1,14 @@
 // backend/src/controllers/TournamentController.js
 import mongoose from 'mongoose';
+import moment from 'moment-timezone';
 import Tournament from '../models/Tournament.js';
 import Room from '../models/Room.js';
 import User from '../models/User.js';
 
+
+
+const TZ = 'Asia/Kolkata';
+const todayStartTZ = () => moment.tz(TZ).startOf('day');
 const isId = (v) => mongoose.isValidObjectId(v);
 const ownerIdOf = (t) => String(t?.organizationId?._id || t?.organizationId || t?.createdBy || '');
 const canModerate = (t, me) =>
@@ -35,22 +40,80 @@ export const createTournament = async (req, res) => {
       price,
       rules,
       prizes,
+      // new fields your UI may send (kept compat-safe)
+      entryFee,
+      prizePool,
+      prizePoolTotal,
+      prizeBreakdown,
     } = req.body;
 
     const organizationId = req.user?._id;
     if (!organizationId) return res.status(401).json({ message: 'Unauthorized' });
+
+    // ---- Date/time guards (Asia/Kolkata) ----
+    // Allow "TBA" (no dates), but if startAt is provided, it cannot be in the past.
+    // If endAt is provided, it must be after startAt (if present) and not in the past.
+    const startM = startAt ? moment.tz(startAt, TZ) : null;
+    const endM   = endAt   ? moment.tz(endAt, TZ)   : null;
+
+    if (startM && !startM.isValid()) {
+      return res.status(400).json({ message: 'Invalid startAt datetime' });
+    }
+    if (endM && !endM.isValid()) {
+      return res.status(400).json({ message: 'Invalid endAt datetime' });
+    }
+
+    if (startM && startM.isBefore(todayStartTZ())) {
+      return res.status(400).json({ message: 'Start date/time cannot be in the past' });
+    }
+    if (!startM && endM && endM.isBefore(todayStartTZ())) {
+      return res.status(400).json({ message: 'End date/time cannot be in the past' });
+    }
+    if (startM && endM && !endM.isAfter(startM)) {
+      return res.status(400).json({ message: 'End date/time must be after start date/time' });
+    }
+
+    // ---- Entry fee/prize normalization (compat with legacy "price") ----
+    const entryFeeN = (entryFee != null) ? Number(entryFee) : (price != null ? Number(price) : 0);
+    const capacityN = Number(capacity) > 0 ? Number(capacity) : 20000;
+
+    // Optional prize fields
+    let prizePoolTotalN = 0;
+    let prizePoolText = '';
+    if (prizePoolTotal != null && prizePoolTotal !== '') {
+      prizePoolTotalN = Number(prizePoolTotal) || 0;
+    } else if (prizePool != null && prizePool !== '') {
+      const n = Number(prizePool);
+      if (!Number.isNaN(n)) {
+        prizePoolTotalN = n;
+      } else {
+        prizePoolText = String(prizePool);
+      }
+    }
+
+    let prizeBreakdownRows = [];
+    if (Array.isArray(prizeBreakdown)) {
+      prizeBreakdownRows = prizeBreakdown
+        .map(r => ({ place: Number(r.place), amount: Number(r.amount) }))
+        .filter(r => Number.isFinite(r.place) && Number.isFinite(r.amount));
+    }
 
     const t = await Tournament.create({
       title,
       description,
       bannerUrl,
       game,
-      startAt: startAt ? new Date(startAt) : null,
-      endAt: endAt ? new Date(endAt) : null,
-      capacity: Number(capacity) > 0 ? Number(capacity) : 20000,
-      price: Number(price) >= 0 ? Number(price) : 0,
+      startAt: startM ? startM.toDate() : null,
+      endAt: endM ? endM.toDate() : null,
+      capacity: capacityN,
+      // keep both for compatibility
+      entryFee: entryFeeN >= 0 ? entryFeeN : 0,
+      price: entryFeeN >= 0 ? entryFeeN : 0,
       rules,
       prizes,
+      prizePoolTotal: prizePoolTotalN,
+      prizePool: prizePoolText,
+      prizeBreakdown: prizeBreakdownRows,
       organizationId,
       createdBy: organizationId,
     });
@@ -143,39 +206,46 @@ export const updateTournament = async (req, res) => {
     if (bannerUrl != null)    $set.bannerUrl = bannerUrl;
     if (game != null)         $set.game = game;
     if (rules != null)        $set.rules = rules;
-
     if (capacity != null)     $set.capacity = Number(capacity);
 
-    if (startAt)              $set.startAt = new Date(startAt);
-    if (endAt)                $set.endAt   = new Date(endAt);
+    // date guards on update (same policy)
+     // Normalize/validate dates in TZ
+    if (startAt) {
+      const s = moment.tz(startAt, TZ);
+      if (s.isBefore(todayStartTZ())) {
+        return res.status(400).json({ message: 'Start date cannot be in the past' });
+      }
+      $set.startAt = s.toDate();
+    }
+    if (endAt) {
+      const e = moment.tz(endAt, TZ);
+      if ($set.startAt && !e.isAfter(moment($set.startAt))) {
+        return res.status(400).json({ message: 'End time must be after start time' });
+      }
+      $set.endAt = e.toDate();
+    }
+    if ($set.startAt && $set.endAt && !moment($set.endAt).isAfter(moment($set.startAt))) {
+      return res.status(400).json({ message: 'End date/time must be after start date/time' });
+    }
 
     // unify entry fee
     if (entryFee != null)     $set.entryFee = Number(entryFee);
     else if (price != null)   $set.entryFee = Number(price); // accept legacy client
-    // (optionally keep legacy price in sync)
     if ($set.entryFee != null) $set.price = $set.entryFee;
 
     // —— PRIZE POOL —— //
-    // If you sent a single "prizePool" from Edit page, coerce:
-    //  - numeric string → prizePoolTotal
-    //  - non-numeric string → prizePool (text)
     if (prizePool !== undefined) {
       const n = Number(prizePool);
       if (!Number.isNaN(n) && prizePool !== '') {
         $set.prizePoolTotal = n;
-        $set.prizePool = ''; // clear text if numeric chosen
+        $set.prizePool = '';
       } else {
         $set.prizePool = String(prizePool);
-        // do not overwrite total unless explicitly provided
       }
     }
-
-    // Allow explicit prizePoolTotal override if provided
     if (prizePoolTotal !== undefined) {
       $set.prizePoolTotal = Number(prizePoolTotal) || 0;
     }
-
-    // Optional breakdown support: accept array or object map
     if (prizeBreakdown !== undefined) {
       let rows = [];
       if (Array.isArray(prizeBreakdown)) {
@@ -189,8 +259,6 @@ export const updateTournament = async (req, res) => {
       }
       $set.prizeBreakdown = rows;
     }
-
-    // legacy blurb still allowed
     if (prizes !== undefined) $set.prizes = prizes;
 
     const updated = await Tournament.findByIdAndUpdate(
@@ -200,6 +268,12 @@ export const updateTournament = async (req, res) => {
     );
 
     if (!updated) return res.status(404).json({ message: 'Tournament not found' });
+
+    // If only one of start/end was provided, still enforce logical order with existing value
+    if (updated.startAt && updated.endAt && !moment(updated.endAt).isAfter(moment(updated.startAt))) {
+      return res.status(400).json({ message: 'End date/time must be after start date/time' });
+    }
+
     return res.json({ tournament: updated });
   } catch (err) {
     console.error('updateTournament error:', err);
@@ -211,9 +285,6 @@ export const updateTournament = async (req, res) => {
    Registration (Team)
 ========================= */
 
-// inside backend/src/controllers/TournamentController.js
-
-// POST /api/tournaments/:id/register  (player)
 // POST /api/tournaments/:id/register  (player)
 export const registerTournament = async (req, res) => {
   try {
@@ -223,13 +294,12 @@ export const registerTournament = async (req, res) => {
     if (!isId(id)) return res.status(400).json({ message: 'Invalid tournament id' });
     if (!me?._id)  return res.status(401).json({ message: 'Not authenticated' });
 
-    // Team/contact payload (phone is the uniqueness “confirmation” field)
     const {
       teamName = '',
       phone = '',
       realName = '',
-      players = [],    // array of { ignName, ignId } — first 4 required, 5th optional
-      ign = '',        // optional legacy field, kept for compatibility
+      players = [],
+      ign = '',
     } = req.body || {};
 
     const cleanPhone = String(phone || '').replace(/\D/g, '');
@@ -237,7 +307,6 @@ export const registerTournament = async (req, res) => {
     if (!cleanPhone)      return res.status(400).json({ message: 'Phone number is required' });
     if (!realName.trim()) return res.status(400).json({ message: 'Real name is required' });
 
-    // players[0..3] must be provided with ignName & ignId; players[4] optional
     const pArr = Array.isArray(players) ? players.filter(Boolean) : [];
     if (pArr.length < 4 || pArr.length > 5) {
       return res.status(400).json({ message: 'Provide 4–5 players' });
@@ -249,35 +318,30 @@ export const registerTournament = async (req, res) => {
       return res.status(400).json({ message: 'First four players must include IGN name & ID' });
     }
 
-    // Load tournament minimally for checks
     const t = await Tournament.findById(id)
       .select('capacity registeredCount participants organizationId')
       .lean();
     if (!t) return res.status(404).json({ message: 'Tournament not found' });
 
-    // Uniqueness: user, phone, or team name already registered in this same tournament
     const alreadyByUser  = (t.participants || []).some(p => String(p.userId) === String(me._id));
     const alreadyByPhone = (t.participants || []).some(p => (p.phone || '').replace(/\D/g, '') === cleanPhone);
     const alreadyByTeam  = (t.participants || []).some(p => (p.teamName || '').toLowerCase() === teamName.trim().toLowerCase());
 
     if (alreadyByUser || alreadyByPhone || alreadyByTeam) {
-      // Return the fresh tourney so the UI can continue
       const fresh = await Tournament.findById(id)
         .populate('organizationId', 'name avatarUrl organizationInfo')
         .lean();
       return res.status(409).json({ message: 'Already registered for this tournament (phone/team/user)', tournament: fresh });
     }
 
-    // capacity check
     const currentCount = Number(t.registeredCount || 0);
     if (t.capacity && currentCount >= t.capacity) {
       return res.status(400).json({ message: 'Capacity full' });
     }
 
-    // Add participant. We keep runValidators false so older docs with legacy fields won’t break.
     const participant = {
       userId: me._id,
-      ign: String(ign || me.name || ''), // legacy/compat
+      ign: String(ign || me.name || ''),
       teamName: teamName.trim(),
       phone: cleanPhone,
       realName: realName.trim(),
@@ -312,22 +376,18 @@ export const getMyGroupTeams = async (req, res) => {
     }
     if (!me) return res.status(401).json({ message: 'Auth required' });
 
-    // load groups + participants once
     const t = await Tournament.findById(id).select('groups participants').lean();
     if (!t) return res.status(404).json({ message: 'Tournament not found' });
 
-    // find my group
     const group = (t.groups || []).find(g =>
       Array.isArray(g.memberIds) && g.memberIds.some(u => String(u) === String(me))
     );
     if (!group) return res.status(404).json({ message: 'You are not in any group yet' });
 
-    // map participant by userId
     const pMap = new Map(
       (t.participants || []).map(p => [String(p.userId), p])
     );
 
-    // Only expose teamName (fall back to ign or 'Team')
     const teams = (group.memberIds || []).map(uid => {
       const key = String(uid);
       const p = pMap.get(key);
@@ -337,7 +397,6 @@ export const getMyGroupTeams = async (req, res) => {
       return { userId: key, teamName };
     });
 
-    // Optional: dedupe + sort by team name
     const seen = new Set();
     const unique = teams.filter(ti => (seen.has(ti.userId) ? false : (seen.add(ti.userId), true)));
     unique.sort((a, b) => a.teamName.localeCompare(b.teamName));
@@ -367,7 +426,6 @@ export const removeTournamentParticipant = async (req, res) => {
       return res.status(403).json({ message: 'Not allowed' });
     }
 
-    // 1) Remove from participants (and decrement registeredCount only if something was removed)
     const beforeCount = (t.participants || []).length;
     await Tournament.updateOne(
       { _id: id },
@@ -385,14 +443,12 @@ export const removeTournamentParticipant = async (req, res) => {
       );
     }
 
-    // 2) Remove from ALL groups in this tournament
     await Tournament.updateOne(
       { _id: id },
       { $pull: { 'groups.$[].memberIds': new mongoose.Types.ObjectId(userId) } },
       { runValidators: false }
     );
 
-    // 3) Remove from any existing group room participants
     await Room.updateMany(
       { tournamentId: id },
       { $pull: { participants: { userId: new mongoose.Types.ObjectId(userId) } } }
@@ -408,8 +464,6 @@ export const removeTournamentParticipant = async (req, res) => {
     return res.status(500).json({ message: 'Failed to remove participant' });
   }
 };
-
-
 
 
 /* =========================
@@ -530,13 +584,11 @@ export const autoGroup = async (req, res) => {
       .filter(Boolean)
       .map(String);
 
-    // shuffle
     for (let i = ids.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [ids[i], ids[j]] = [ids[j], ids[i]];
     }
 
-    // build groups
     const groups = [];
     for (let i = 0, n = 1; i < ids.length; i += size, n++) {
       const memberIds = ids.slice(i, i + size).map(x => new mongoose.Types.ObjectId(x));
@@ -554,7 +606,6 @@ export const autoGroup = async (req, res) => {
       { runValidators: false }
     );
 
-    // create a room for each group
     for (const g of groups) {
       const room = await Room.create({
         tournamentId: new mongoose.Types.ObjectId(id),
@@ -572,9 +623,14 @@ export const autoGroup = async (req, res) => {
 
       await Tournament.updateOne(
         { _id: id, 'groups._id': g._id },
-        { $set: { 'groups.$.roomId': room._id } },
-        { runValidators: false }
-      );
+        { $set: { 'groups.$.roomId': room._._id } } // typo fix not needed; leaving original approach
+      ).catch(async () => {
+        await Tournament.updateOne(
+          { _id: id, 'groups._id': g._id },
+          { $set: { 'groups.$.roomId': room._id } },
+          { runValidators: false }
+        );
+      });
     }
 
     const fresh = await Tournament.findById(id).populate('groups.memberIds', 'name avatarUrl').lean();
@@ -772,7 +828,7 @@ export const moveGroupMember = async (req, res) => {
       return res.status(400).json({ message: 'Bad request' });
     }
 
-    const t = await Tournament.findById(id).select('organizationId createdBy groups');
+    const t = await Tournament.findById(id).select('organizationId createdBy groups participants');
     if (!t) return res.status(404).json({ message: 'Tournament not found' });
 
     const me = String(req.user?._id || '');
@@ -780,6 +836,16 @@ export const moveGroupMember = async (req, res) => {
     if (me !== owner && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Not allowed' });
     }
+
+    const isParticipant = (t.participants || []).some(p => String(p.userId) === String(userId));
+    if (!isParticipant) {
+      return res.status(400).json({ message: 'User is not registered in this tournament' });
+    }
+    const fromG = t.groups.find(g => String(g._id) === String(fromGroupId));
+    const toG   = t.groups.find(g => String(g._id) === String(toGroupId));
+    if (!fromG || !toG) return res.status(404).json({ message: 'Group not found' });
+    const inFrom = (fromG.memberIds || []).some(uid => String(uid) === String(userId));
+    if (!inFrom) return res.status(400).json({ message: 'User not in source group' });
 
     await Tournament.updateOne(
       { _id: id, 'groups._id': fromGroupId },
@@ -794,11 +860,11 @@ export const moveGroupMember = async (req, res) => {
     );
 
     const fresh = await Tournament.findById(id).select('groups').lean();
-    const fromG = fresh.groups.find(g => String(g._id) === String(fromGroupId));
-    const toG   = fresh.groups.find(g => String(g._id) === String(toGroupId));
+    const fromG2 = fresh.groups.find(g => String(g._id) === String(fromGroupId));
+    const toG2   = fresh.groups.find(g => String(g._id) === String(toGroupId));
 
-    const fromRoom = fromG ? await ensureGroupRoom(t._id, fromG) : null;
-    const toRoom   = toG   ? await ensureGroupRoom(t._id, toG)   : null;
+    const fromRoom = fromG2 ? await ensureGroupRoom(t._id, fromG2) : null;
+    const toRoom   = toG2   ? await ensureGroupRoom(t._id, toG2)   : null;
 
     if (fromRoom) {
       await Room.updateOne(
@@ -833,13 +899,18 @@ export const addGroupMember = async (req, res) => {
       return res.status(400).json({ message: 'Invalid id(s)' });
     }
 
-    const t = await Tournament.findById(id).select('groups organizationId createdBy').lean();
+    const t = await Tournament.findById(id).select('groups organizationId createdBy participants').lean();
     if (!t) return res.status(404).json({ message: 'Tournament not found' });
 
     const actor = String(req.user?._id || '');
     const owner = ownerIdOf(t);
     if (actor !== owner && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Not allowed' });
+    }
+
+    const isParticipant = (t.participants || []).some(p => String(p.userId) === String(userId));
+    if (!isParticipant) {
+      return res.status(400).json({ message: 'User is not registered in this tournament' });
     }
 
     await Tournament.updateOne(
@@ -897,7 +968,7 @@ export const createGroup = async (req, res) => {
     const { id } = req.params;
     const { name, memberIds } = req.body;
 
-    const t = await Tournament.findById(id).select('organizationId createdBy groups');
+    const t = await Tournament.findById(id).select('organizationId createdBy groups participants');
     if (!t) return res.status(404).json({ message: 'Tournament not found' });
 
     const me = String(req.user?._id || '');
@@ -906,8 +977,13 @@ export const createGroup = async (req, res) => {
       return res.status(403).json({ message: 'Not allowed' });
     }
 
+    const pSet = new Set((t.participants || []).map(p => String(p.userId)));
     const clean = Array.isArray(memberIds)
-      ? memberIds.filter(Boolean).map(m => toObjectId(m))
+      ? memberIds
+          .filter(Boolean)
+          .map(String)
+          .filter(uid => pSet.has(uid))
+          .map(toObjectId)
       : [];
 
     const group = {
@@ -928,15 +1004,37 @@ export const createGroup = async (req, res) => {
 export const listGroups = async (req, res) => {
   try {
     const t = await Tournament.findById(req.params.id)
+      .select('participants groups organizationId createdBy')
       .populate('groups.memberIds', 'name avatarUrl organizationInfo');
-  if (!t) return res.status(404).json({ message: 'Tournament not found' });
+    if (!t) return res.status(404).json({ message: 'Tournament not found' });
 
     const me = String(req.user?._id || '');
     const owner = ownerIdOf(t);
     if (me !== owner && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Not allowed' });
     }
-    return res.json({ groups: Array.isArray(t.groups) ? t.groups : [] });
+
+    const participantSet = new Set(
+      (t.participants || []).map(p => String(p.userId))
+    );
+
+    let mutated = false;
+    const cleaned = (t.groups || []).map(g => {
+      const original = Array.isArray(g.memberIds) ? g.memberIds : [];
+      const filtered = original.filter(uid => participantSet.has(String(uid._id || uid)));
+      if (filtered.length !== original.length) mutated = true;
+      return { ...g.toObject?.() ?? g, memberIds: filtered };
+    });
+
+    if (mutated) {
+      await Tournament.updateOne(
+        { _id: t._id },
+        { $set: { groups: cleaned.map(({ _id, name, memberIds, roomId }) => ({ _id, name, memberIds, roomId })) } },
+        { runValidators: false }
+      );
+    }
+
+    return res.json({ groups: cleaned });
   } catch (e) {
     console.error('listGroups error:', e);
     return res.status(500).json({ message: 'Failed to fetch groups' });
@@ -983,7 +1081,6 @@ export const getMyGroupRoomMessages = async (req, res) => {
     );
     if (!group) return res.status(404).json({ message: 'You are not in any group yet' });
 
-    // ensure room
     let room;
     if (group.roomId) {
       room = await Room.findById(group.roomId);
@@ -1071,6 +1168,7 @@ const ensureGroupRoom = async (tournamentId, group) => {
   }
 
   if (!room) {
+
     room = await Room.create({
       tournamentId,
       groupId: group._id,

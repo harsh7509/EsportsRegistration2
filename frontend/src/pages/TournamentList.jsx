@@ -4,6 +4,8 @@ import { tournamentsAPI } from "./../services/api.js";
 import {
   Calendar, Users, Trophy, MapPin, Search, Filter, RefreshCw, ChevronRight,
 } from "lucide-react";
+ import { useNavigate } from 'react-router-dom';
+
 
 const priceLabel = (n) => {
   const v = Number(n || 0);
@@ -59,6 +61,8 @@ export default function TournamentList() {
   const [q, setQ] = useState("");
   const [game, setGame] = useState("all");
   const [sortKey, setSortKey] = useState("date_desc"); // date_desc | fee_asc | fee_desc | cap_desc
+   const navigate = useNavigate();
+
 
   const load = async () => {
     try {

@@ -10,13 +10,10 @@ const ScrimCard = ({ scrim }) => {
   const isPast = end ? end < new Date() : false;
   const isFull = (scrim?.participants?.length || 0) >= (scrim?.capacity || 0);
 
-  const fmtDateTime = (d) =>
-    d?.toLocaleString('en-IN', {
-      dateStyle: 'medium',
-      timeStyle: 'short',
-      hour12: true,
-      timeZone: 'Asia/Kolkata',
-    });
+  const fmtDateTime = (v) => {
+  const d = v ? new Date(v) : null;
+  return d && !isNaN(d) ? d.toLocaleString() : '—';
+};
 
   const sameDay = start && end && start.toDateString() === end.toDateString();
 

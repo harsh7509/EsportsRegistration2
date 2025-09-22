@@ -1,10 +1,8 @@
-// src/components/RoomView.jsx
 import React, { useEffect, useRef, useState } from 'react';
-import { MessageSquare, Send, Lock, Upload } from 'lucide-react';
+import { MessageSquare, Send, Lock, Upload, RotateCw } from 'lucide-react';
 import { scrimsAPI, uploadAPI } from '../services/api';
 import { NormalizeImageUrl } from '../utils/img.js';
 import { useParams } from 'react-router-dom';
-
 import toast from 'react-hot-toast';
 
 const RolePill = ({ role }) => {
@@ -37,23 +35,30 @@ const RoomView = ({ scrimId, isOwner }) => {
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
+
   const fileInputRef = useRef(null);
   const listRef = useRef(null);
   const messagesEndRef = useRef(null);
-   // also try to read from route if parent didn't pass
+
+  // also try to read from route if parent didn't pass
   const { scrimId: pScrimId, id: pId } = useParams();
   const resolvedScrimId = scrimId ?? pScrimId ?? pId ?? null;
 
   useEffect(() => {
-   if (!resolvedScrimId) {
-     // no id → stop loading and show empty state instead of hammering API with "undefined"
-     setLoading(false);
-     return;
-   }
-   fetchMessages(resolvedScrimId);
- }, [resolvedScrimId]);
-  useEffect(() => { scrollToBottom(); }, [messages]);
+    if (!resolvedScrimId) {
+      // no id → stop loading and show empty state instead of hammering API with "undefined"
+      setLoading(false);
+      return;
+    }
+    fetchMessages(resolvedScrimId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resolvedScrimId]);
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -61,29 +66,40 @@ const RoomView = ({ scrimId, isOwner }) => {
 
   const fetchMessages = async (sid) => {
     if (!sid) return;
+    const setBusy = loading ? setLoading : setRefreshing;
+    setBusy(true);
     try {
       const response = await scrimsAPI.getRoomMessages(sid);
       setMessages(response?.data?.room?.messages || []);
     } catch (error) {
       console.error('Failed to fetch messages:', error);
-      toast.error('Failed to load messages');
+      const msg =
+        error?.response?.data?.message ||
+        error?.message ||
+        'Failed to load messages';
+      toast.error(msg);
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
+  };
+
+  const handleRefresh = async () => {
+    if (!resolvedScrimId || refreshing) return;
+    await fetchMessages(resolvedScrimId);
+    toast.success('Room updated');
   };
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
-    if (!newMessage.trim()) return;
+    if (!newMessage.trim() || !resolvedScrimId) return;
     try {
-      if (!resolvedScrimId) return;
- await scrimsAPI.sendRoomMessage(resolvedScrimId, { content: newMessage, type: 'text' });  
+      await scrimsAPI.sendRoomMessage(resolvedScrimId, { content: newMessage, type: 'text' });
       setNewMessage('');
-      fetchMessages();
+      await fetchMessages(resolvedScrimId);
       toast.success('Message sent');
     } catch (error) {
       console.error('Failed to send message:', error);
-      toast.error('Failed to send message');
+      toast.error(error?.response?.data?.message || 'Failed to send message');
     }
   };
 
@@ -99,16 +115,16 @@ const RoomView = ({ scrimId, isOwner }) => {
     try {
       const response = await uploadAPI.uploadImage(file);
       if (!resolvedScrimId) return;
- await scrimsAPI.sendRoomMessage(resolvedScrimId, {
+      await scrimsAPI.sendRoomMessage(resolvedScrimId, {
         content: `Image: ${file.name}`,
         type: 'image',
         imageUrl: response?.data?.imageUrl,
       });
-      fetchMessages();
+      await fetchMessages(resolvedScrimId);
       toast.success('Image uploaded successfully');
     } catch (error) {
       console.error('Upload failed:', error);
-      toast.error('Failed to upload image');
+      toast.error(error?.response?.data?.message || 'Failed to upload image');
     } finally {
       setUploadingImage(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -131,6 +147,18 @@ const RoomView = ({ scrimId, isOwner }) => {
             </p>
           </div>
         </div>
+
+        {/* Refresh button (both org & players) */}
+        <button
+          type="button"
+          onClick={handleRefresh}
+          disabled={refreshing || loading || !resolvedScrimId}
+          className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white hover:bg-white/10 disabled:opacity-60"
+          title="Refresh messages"
+        >
+          <RotateCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+          Refresh
+        </button>
       </div>
 
       {/* Messages list */}

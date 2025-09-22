@@ -77,6 +77,8 @@ const CreateScrimModal = ({ isOpen, onClose, onScrimCreated }) => {
 }, [formData,todayStr]);
 
 
+
+
   // 2) Conditional return AFTER all hooks
   if (!isOpen) return null;
 
@@ -90,20 +92,17 @@ const CreateScrimModal = ({ isOpen, onClose, onScrimCreated }) => {
 
     setLoading(true);
     try {
-      const scrimDate = new Date(formData.date);
-      const [startHour, startMin] = (formData.timeSlot.start || '00:00').split(':');
-      const [endHour, endMin] = (formData.timeSlot.end || '00:00').split(':');
-
-      const startTime = new Date(scrimDate);
-      startTime.setHours(parseInt(startHour, 10), parseInt(startMin, 10), 0, 0);
-
-      const endTime = new Date(scrimDate);
-      endTime.setHours(parseInt(endHour, 10), parseInt(endMin, 10), 0, 0);
-
+     // Send date and local times as plain strings. The backend will
+      // combine them in Asia/Kolkata using moment.tz() (you already wrote this).
       const scrimData = {
         ...formData,
-        date: scrimDate.toISOString(),
-        timeSlot: { start: startTime.toISOString(), end: endTime.toISOString() },
+        // Keep this as "YYYY-MM-DD"
+        date: formData.date,
+        // Keep these as "HH:mm" (no timezone! no ISO!)
+        timeSlot: {
+          startTimeStr: formData.timeSlot.start,
+          endTimeStr: formData.timeSlot.end,
+        },
         capacity: parseInt(formData.capacity, 10),
         entryFee: parseFloat(formData.entryFee) || 0,
         prizePool: parseFloat(formData.prizePool) || 0,

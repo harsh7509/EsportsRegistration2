@@ -7,6 +7,8 @@ const BookingModal = ({ scrim, isOpen, onClose, onBookingSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [roomCredentials, setRoomCredentials] = useState(null);
   const [playerInfo, setPlayerInfo] = useState({
+    ign: '',           // ✅ REQUIRED by backend
+    ignId: '',         // optional
     teamName: '',
     contactNumber: '',
     discordId: ''
@@ -18,14 +20,30 @@ const BookingModal = ({ scrim, isOpen, onClose, onBookingSuccess }) => {
     setPlayerInfo((s) => ({ ...s, [k]: e.target.value }));
 
   const handleBooking = async () => {
+    // ✅ Frontend validations to match backend requirements
+    if (!playerInfo.ign.trim()) {
+      toast.error('Please enter your in-game name (IGN)');
+      return;
+    }
     if (!playerInfo.contactNumber.trim()) {
       toast.error('Please enter your contact number');
       return;
     }
 
+    // Optionally trim before sending
+    const payload = {
+      playerInfo: {
+        ign: playerInfo.ign.trim(),
+        ignId: playerInfo.ignId?.trim() || undefined,
+        teamName: playerInfo.teamName?.trim() || undefined,
+        contactNumber: playerInfo.contactNumber.trim(),
+        discordId: playerInfo.discordId?.trim() || undefined,
+      }
+    };
+
     setLoading(true);
     try {
-      const response = await scrimsAPI.book(scrim._id, { playerInfo });
+      const response = await scrimsAPI.book(scrim._id, payload);
 
       toast.success('Successfully booked scrim!');
       onBookingSuccess?.(response.data.requiresPayment);
@@ -107,12 +125,12 @@ const BookingModal = ({ scrim, isOpen, onClose, onBookingSuccess }) => {
                 <p>Game: <span className="text-white/90">{scrim.game}</span></p>
                 <p>Date: <span className="text-white/90">{dateStr}</span></p>
                 <p>Time: <span className="text-white/90">{timeStr}</span></p>
-                {scrim.entryFee > 0 && (
+                {Number(scrim.entryFee) > 0 && (
                   <p className="text-emerald-300">Entry Fee: ₹{scrim.entryFee}</p>
                 )}
               </div>
 
-              {scrim.entryFee > 0 && (
+              {Number(scrim.entryFee) > 0 && (
                 <div className="mt-3 rounded-lg border border-yellow-500/30 bg-yellow-900/20 p-3">
                   <p className="text-xs text-yellow-300">
                     💳 Payment will be required after booking confirmation.
@@ -121,30 +139,65 @@ const BookingModal = ({ scrim, isOpen, onClose, onBookingSuccess }) => {
               )}
             </div>
 
-            {/* Contact form — matches Login input look */}
+            {/* Form */}
             <div className="space-y-3">
-              <label className="text-xs text-white/70">Team Name (optional)</label>
-              <div className="relative">
-                <Users className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/50" />
-                <input
-                  type="text"
-                  placeholder="e.g., Night Raiders"
-                  className="w-full rounded-xl border px-10 py-2.75 text-sm text-white outline-none placeholder:text-white/40 bg-white/5 focus:border-white/20 focus:ring-2 focus:ring-indigo-500/30 border-white/10"
-                  value={playerInfo.teamName}
-                  onChange={onChange('teamName')}
-                />
+              {/* IGN (required) */}
+              <div>
+                <label className="mb-1.5 block text-xs text-white/70">In-Game Name (IGN) *</label>
+                <div className="relative">
+                  <Shield className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/50" />
+                  <input
+                    type="text"
+                    placeholder="e.g., NightRaider"
+                    className="w-full rounded-xl border px-10 py-2.75 text-sm text-white outline-none placeholder:text-white/40 bg-white/5 focus:border-white/20 focus:ring-2 focus:ring-indigo-500/30 border-white/10"
+                    value={playerInfo.ign}
+                    onChange={onChange('ign')}
+                    required
+                  />
+                </div>
               </div>
 
+              {/* IGN ID (optional) */}
+              <div>
+                <label className="mb-1.5 block text-xs text-white/70">IGN ID (optional)</label>
+                <div className="relative">
+                  <Hash className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/50" />
+                  <input
+                    type="text"
+                    placeholder="e.g., 5123456789"
+                    className="w-full rounded-xl border px-10 py-2.75 text-sm text-white outline-none placeholder:text-white/40 bg-white/5 focus:border-white/20 focus:ring-2 focus:ring-indigo-500/30 border-white/10"
+                    value={playerInfo.ignId}
+                    onChange={onChange('ignId')}
+                  />
+                </div>
+              </div>
+
+              {/* Team Name (optional unless your backend requires for squads) */}
+              <div>
+                <label className="text-xs text-white/70">Team Name</label>
+                <div className="relative">
+                  <Users className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/50" />
+                  <input
+                    type="text"
+                    placeholder="e.g., Night Raiders"
+                    className="w-full rounded-xl border px-10 py-2.75 text-sm text-white outline-none placeholder:text-white/40 bg-white/5 focus:border-white/20 focus:ring-2 focus:ring-indigo-500/30 border-white/10"
+                    value={playerInfo.teamName}
+                    onChange={onChange('teamName')}
+                  />
+                </div>
+              </div>
+
+              {/* Contact (required) */}
               <div>
                 <div className="mb-1.5 flex items-center justify-between">
-                  <label className="text-xs text-white/70">Contact Number</label>
+                  <label className="text-xs text-white/70">Contact Number *</label>
                 </div>
                 <div className="relative">
                   <Phone className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/50" />
                   <input
                     type="tel"
                     placeholder="Your phone number"
-                    className={`w-full rounded-xl border px-10 py-2.75 text-sm text-white outline-none placeholder:text-white/40 bg-white/5 focus:border-white/20 focus:ring-2 focus:ring-indigo-500/30 border-white/10 ${!playerInfo.contactNumber ? '' : ''}`}
+                    className="w-full rounded-xl border px-10 py-2.75 text-sm text-white outline-none placeholder:text-white/40 bg-white/5 focus:border-white/20 focus:ring-2 focus:ring-indigo-500/30 border-white/10"
                     value={playerInfo.contactNumber}
                     onChange={onChange('contactNumber')}
                     required
@@ -152,6 +205,7 @@ const BookingModal = ({ scrim, isOpen, onClose, onBookingSuccess }) => {
                 </div>
               </div>
 
+              {/* Discord (optional) */}
               <div>
                 <label className="mb-1.5 block text-xs text-white/70">Discord ID (optional)</label>
                 <div className="relative">
@@ -178,11 +232,11 @@ const BookingModal = ({ scrim, isOpen, onClose, onBookingSuccess }) => {
               </button>
               <button
                 onClick={handleBooking}
-                disabled={loading || !playerInfo.contactNumber}
+                disabled={loading || !playerInfo.ign || !playerInfo.contactNumber}
                 className="group relative flex-1 rounded-xl bg-indigo-500 px-4 py-3 text-sm font-semibold text-white hover:bg-indigo-600 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-70"
               >
                 <span className="inline-flex items-center justify-center gap-2">
-                  {loading ? 'Booking…' : scrim.entryFee > 0 ? 'Book & Pay' : 'Confirm Booking'}
+                  {loading ? 'Booking…' : Number(scrim.entryFee) > 0 ? 'Book & Pay' : 'Confirm Booking'}
                 </span>
                 <span className="pointer-events-none absolute inset-0 -z-10 rounded-xl bg-indigo-400/20 opacity-0 blur transition group-hover:opacity-100" />
               </button>

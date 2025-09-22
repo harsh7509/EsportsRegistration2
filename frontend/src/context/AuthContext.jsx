@@ -46,22 +46,20 @@ const initialState = {
 };
 
 // Helper: call /auth/me using whatever shape authAPI exposes
-async function fetchMeSafe(token) {
+async function fetchMeSafe(/* token not required once axios has header */) {
   try {
     if (authAPI?.me) {
       const r = await authAPI.me();
       return r?.data?.user ?? r?.data ?? null;
     }
     if (authAPI?.get) {
-      const r = await authAPI.get('/auth/me', {
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      });
+      const r = await authAPI.get('/auth/me');
       return r?.data?.user ?? r?.data ?? null;
     }
     // Fallback to fetch if needed
     const API = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
     const r = await fetch(`${API}/auth/me`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      headers: {},
       credentials: 'include',
     });
     if (!r.ok) return null;
@@ -89,7 +87,7 @@ export const AuthProvider = ({ children }) => {
           dispatch({ type: 'LOGIN_SUCCESS', payload: { user } });
         } else if (token && !storedUser) {
           // Token present but user missing → fetch /auth/me
-          const meUser = await fetchMeSafe(token);
+          const meUser = await fetchMeSafe();
           if (meUser) {
             localStorage.setItem('user', JSON.stringify(meUser));
             dispatch({ type: 'LOGIN_SUCCESS', payload: { user: meUser } });
@@ -108,6 +106,28 @@ export const AuthProvider = ({ children }) => {
     })();
   }, []);
 
+  /**
+   * 🔧 NEW: Adopt freshly issued tokens (e.g., after OTP verify),
+   * fetch /auth/me, persist user, and update context in one shot.
+   */
+  const adoptTokensAndLoadUser = async (accessToken, refreshToken) => {
+    // Set tokens first so axios attaches Authorization
+    if (accessToken || refreshToken) {
+      setTokens(accessToken || '', refreshToken || '');
+    }
+    const user = await fetchMeSafe();
+    if (user) {
+      localStorage.setItem('user', JSON.stringify(user));
+      dispatch({ type: 'LOGIN_SUCCESS', payload: { user } });
+    } else {
+      // If /me fails, clear the bad tokens
+      clearTokens();
+      localStorage.removeItem('user');
+      dispatch({ type: 'LOGIN_FAILURE', payload: 'Failed to load user' });
+    }
+    return user;
+  };
+
   const login = async (credentials) => {
     dispatch({ type: 'LOGIN_START' });
     try {
@@ -116,31 +136,26 @@ export const AuthProvider = ({ children }) => {
       const resp = await authAPI.login(credentials);
       const data = resp?.data ?? resp ?? {};
 
-      // Accept any token field name from backend
       const accessToken =
         data.accessToken || data.access_token || data.token || null;
       const refreshToken =
         data.refreshToken || data.refresh_token || null;
 
-      // Prefer user from response; if absent, fetch /auth/me
+      // ✅ Set tokens FIRST so subsequent calls have Authorization header
+      if (accessToken || refreshToken) {
+        setTokens(accessToken || '', refreshToken || '');
+      }
+
+      // Prefer user from response; if absent, fetch /auth/me (now authorized)
       let user = data.user ?? null;
       if (!user && accessToken) {
-        user = await fetchMeSafe(accessToken);
+        user = await fetchMeSafe();
       }
 
-      if (!accessToken || !user) {
-        const msg = !accessToken
-          ? 'No access token returned'
-          : 'Login succeeded but user info missing';
-        console.warn('[Auth] ' + msg);
-      }
-
-      // Persist what we have
-      setTokens(accessToken || '', refreshToken || '');
       if (user) localStorage.setItem('user', JSON.stringify(user));
 
       dispatch({ type: 'LOGIN_SUCCESS', payload: { user } });
-      return { success: true };
+      return { success: true, user };
     } catch (error) {
       console.error('❌ Login failed:', error);
       const message =
@@ -160,21 +175,30 @@ export const AuthProvider = ({ children }) => {
       const resp = await authAPI.register(userData);
       const data = resp?.data ?? resp ?? {};
 
+      // If staged signup → go to OTP step on the Signup page.
+      if (data?.otpRequired) {
+        dispatch({ type: 'SET_LOADING', payload: false });
+        return { success: true, otpRequired: true, tempToken: data.tempToken };
+      }
+
       const accessToken =
         data.accessToken || data.access_token || data.token || null;
       const refreshToken =
         data.refreshToken || data.refresh_token || null;
 
-      let user = data.user ?? null;
-      if (!user && accessToken) {
-        user = await fetchMeSafe(accessToken);
+      if (accessToken || refreshToken) {
+        setTokens(accessToken || '', refreshToken || '');
       }
 
-      setTokens(accessToken || '', refreshToken || '');
+      let user = data.user ?? null;
+      if (!user && accessToken) {
+        user = await fetchMeSafe();
+      }
+
       if (user) localStorage.setItem('user', JSON.stringify(user));
 
       dispatch({ type: 'LOGIN_SUCCESS', payload: { user } });
-      return { success: true };
+      return { success: true, user };
     } catch (error) {
       console.error('❌ Registration failed:', error);
       const message =
@@ -219,6 +243,7 @@ export const AuthProvider = ({ children }) => {
     register,
     logout,
     updateProfile,
+    adoptTokensAndLoadUser, // 👈 expose for OTP verify flow
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

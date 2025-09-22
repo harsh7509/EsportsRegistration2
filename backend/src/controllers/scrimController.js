@@ -72,8 +72,8 @@ export const createScrim = async (req, res) => {
     } = req.body;
 
     const capacityN   = Number(capacity) || 100;
-const entryFeeN   = Number(entryFee) || 0;
-const prizePoolN  = Number(prizePool) || 0;
+    const entryFeeN   = Number(entryFee) || 0;
+    const prizePoolN  = Number(prizePool) || 0;
 
     // Normalize timeSlot: accept either full ISO or separate time strings with AM/PM
     let normalizedTimeSlot = { start: null, end: null };
@@ -122,23 +122,22 @@ const prizePoolN  = Number(prizePool) || 0;
     }
 
     // ----- guards: block past dates & bad ordering -----
-if (!isValidDate(normalizedTimeSlot.start) || !isValidDate(normalizedTimeSlot.end)) {
-  return res.status(400).json({ message: 'Start and end time are required and must be valid' });
-}
+    if (!isValidDate(normalizedTimeSlot.start) || !isValidDate(normalizedTimeSlot.end)) {
+      return res.status(400).json({ message: 'Start and end time are required and must be valid' });
+    }
 
-const startM = moment(normalizedTimeSlot.start);
-const endM   = moment(normalizedTimeSlot.end);
+    const startM = moment(normalizedTimeSlot.start);
+    const endM   = moment(normalizedTimeSlot.end);
 
-// past-day block (strictly today or future in Asia/Kolkata)
-if (startM.isBefore(todayStartTZ())) {
-  return res.status(400).json({ message: 'Date cannot be in the past' });
-}
+    // past-day block (strictly today or future in Asia/Kolkata)
+    if (startM.isBefore(todayStartTZ())) {
+      return res.status(400).json({ message: 'Date cannot be in the past' });
+    }
 
-// end after start
-if (!endM.isAfter(startM)) {
-  return res.status(400).json({ message: 'End time must be after start time' });
-}
-
+    // end after start
+    if (!endM.isAfter(startM)) {
+      return res.status(400).json({ message: 'End time must be after start time' });
+    }
 
     const scrim = new Scrim({
       title,
@@ -151,10 +150,10 @@ if (!endM.isAfter(startM)) {
         end: normalizedTimeSlot.end,
       },
       capacity: capacityN,
-  entryFee: entryFeeN,
-  prizePool: prizePoolN,
-  isPaid: entryFeeN > 0,
-  price: entryFeeN,
+      entryFee: entryFeeN,
+      prizePool: prizePoolN,
+      isPaid: entryFeeN > 0,
+      price: entryFeeN,
       room: encryptedRoom,
       createdBy: req.user._id,
     });
@@ -281,20 +280,24 @@ export const getScrimDetails = async (req, res) => {
       isBooked = !!booking;
     }
 
+    const bookingLean = booking ? booking.toObject() : null;
+if (bookingLean) {
+  bookingLean.bookedAt = bookingLean.bookedAt || bookingLean.createdAt || bookingLean.updatedAt || new Date(0);
+}
+
     const scrimData = scrim.toObject();
     if (scrimData.room && scrimData.room.password) {
       const isOwner = userId && scrim.createdBy._id.toString() === userId.toString();
       if (!isOwner && !isBooked) delete scrimData.room.password;
     }
 
-    res.json({ scrim: scrimData, isBooked, booking });
+    res.json({ scrim: scrimData, isBooked, booking:bookingLean });
   } catch (error) {
     console.error('Get scrim details error:', error);
     res.status(500).json({ message: 'Server error fetching scrim details' });
   }
 };
 
-// ---------- Book Scrim ----------
 // ---------- Book Scrim ----------
 export const bookScrim = async (req, res) => {
   const session = await mongoose.startSession();
@@ -308,16 +311,12 @@ export const bookScrim = async (req, res) => {
     const scrim = await Scrim.findById(scrimId).session(session);
     if (!scrim) throw new Error('Scrim not found');
 
-    // Time window: can book only between start and end
     // Booking allowed any time BEFORE the scrim starts
-const start = new Date(scrim.timeSlot?.start || scrim.date);
-const now   = new Date();
-
-if (now > start) {
-  throw new Error('Booking closed — scrim already started');
-}
-
-
+    const start = moment.tz(scrim.timeSlot?.start || scrim.date, TZ);
+    const now   = moment.tz(TZ);
+    if (now.isAfter(start)) {
+      throw new Error('Booking closed — scrim already started');
+    }
 
     // Optionally allow booking when status is 'upcoming' OR 'ongoing'
     if (!['upcoming', 'ongoing'].includes(scrim.status)) {
@@ -339,12 +338,12 @@ if (now > start) {
     scrim.participants.push(playerId);
     await scrim.save({ session });
 
-    const [booking] = await Booking.create([{ scrimId, playerId, playerInfo }], { session });
+    const [booking] = await Booking.create([{ scrimId, playerId, playerInfo,bookedAt: new Date() }], { session });
 
     await session.commitTransaction();
     session.endSession();
 
-    // handle payment / room add exactly as you had
+    // handle payment / room add
     if (scrim.entryFee > 0) {
       await Payment.create({ scrimId, playerId, amount: scrim.entryFee, status: 'pending' });
     } else {
@@ -352,7 +351,7 @@ if (now > start) {
       if (room) {
         const exists = room.participants?.some(p => String(p.userId) === String(playerId));
         if (!exists) {
-          room.participants.push({ userId: playerId });
+          room.participants.push({ userId: playerId }); // default status = 'active'
           await room.save();
         }
       }
@@ -381,29 +380,41 @@ export const getRoomCredentials = async (req, res) => {
     const scrim = await Scrim.findById(scrimId);
     if (!scrim) return res.status(404).json({ message: 'Scrim not found' });
 
-    const isOwner = scrim.createdBy.toString() === userId.toString();
-    let isBooked = false;
-
-    if (!isOwner) {
-      const booking = await Booking.findOne({
-        scrimId,
-        playerId: userId,
-        status: 'active',
-        paid: true,
-      });
-
-      const room = await Room.findOne({ scrimId });
-      const isInRoom = room?.participants?.some(
-        (p) => p.userId.toString() === userId.toString() && p.status === 'active'
-      );
-      isBooked = !!booking || !!isInRoom;
-    }
-
-    if (!isOwner && !isBooked)
-      return res.status(403).json({ message: 'Not authorized to view room credentials' });
-
     const room = await Room.findOne({ scrimId });
     if (!room) return res.status(404).json({ message: 'Room not found' });
+
+    const isOwner = scrim.createdBy.toString() === userId.toString();
+
+    // Check booking (no paid restriction here)
+    const activeBooking = await Booking.findOne({
+      scrimId,
+      playerId: userId,
+      status: 'active',
+    });
+
+    const isPaidBooking = !!activeBooking?.paid;
+    const isInRoom = room.participants?.some(
+      (p) => p.userId.toString() === userId.toString() && p.status === 'active'
+    );
+
+    // Authorization:
+    // - Owner → allow
+    // - Paid scrim → require paid booking OR room membership
+    // - Free scrim → require active booking OR room membership
+    const requiresPayment = scrim.entryFee > 0;
+    const authorized = isOwner ||
+      isInRoom ||
+      (requiresPayment ? isPaidBooking : !!activeBooking);
+
+    if (!authorized) {
+      return res.status(403).json({ message: 'Not authorized to view room credentials' });
+    }
+
+    // If authorized via booking but not yet in room → auto-add
+    if (!isInRoom && activeBooking) {
+      room.participants.push({ userId, status: 'active' });
+      await room.save();
+    }
 
     let roomPassword = null;
     if (room.password) {
@@ -445,23 +456,23 @@ export const updateScrim = async (req, res) => {
       if (ts.end) scrim.timeSlot.end = moment.tz(ts.end, TZ).toDate();
     }
     if (updates.date) scrim.date = moment.tz(updates.date, 'YYYY-MM-DD', TZ).toDate();
+
     // ----- guards on update -----
-const startG = scrim.timeSlot?.start ? moment(scrim.timeSlot.start) : null;
-const endG   = scrim.timeSlot?.end ? moment(scrim.timeSlot.end) : null;
+    const startG = scrim.timeSlot?.start ? moment(scrim.timeSlot.start) : null;
+    const endG   = scrim.timeSlot?.end ? moment(scrim.timeSlot.end) : null;
 
-if (!startG || !startG.isValid() || !endG || !endG.isValid()) {
-  return res.status(400).json({ message: 'Start and end time are required and must be valid' });
-}
-if (startG.isBefore(todayStartTZ())) {
-  return res.status(400).json({ message: 'Date cannot be in the past' });
-}
-if (!endG.isAfter(startG)) {
-  return res.status(400).json({ message: 'End time must be after start time' });
-}
+    if (!startG || !startG.isValid() || !endG || !endG.isValid()) {
+      return res.status(400).json({ message: 'Start and end time are required and must be valid' });
+    }
+    if (startG.isBefore(todayStartTZ())) {
+      return res.status(400).json({ message: 'Date cannot be in the past' });
+    }
+    if (!endG.isAfter(startG)) {
+      return res.status(400).json({ message: 'End time must be after start time' });
+    }
 
-// keep scrim.date = start-of-day in TZ (optional but consistent)
-scrim.date = moment(startG).startOf('day').toDate();
-
+    // keep scrim.date = start-of-day in TZ (optional but consistent)
+    scrim.date = moment(startG).startOf('day').toDate();
 
     const writable = [
       'title',
@@ -600,7 +611,6 @@ export const sendRoomMessage = async (req, res) => {
   }
 };
 
-
 // ---------- Get Room Messages ----------
 export const getRoomMessages = async (req, res) => {
   try {
@@ -617,11 +627,36 @@ export const getRoomMessages = async (req, res) => {
     if (!room) return res.status(404).json({ message: 'Room not found' });
 
     const isOwner = scrim.createdBy.toString() === userId.toString();
+
+    // Check membership & booking
     const isInRoom = room.participants.some(
       (p) => p.userId?._id?.toString() === userId.toString() && p.status === 'active'
     );
-    if (!isOwner && !isInRoom) {
+    const activeBooking = await Booking.findOne({
+      scrimId,
+      playerId: userId,
+      status: 'active',
+    });
+
+    // Authorization mirrors credentials logic:
+    // - Owner → allow
+    // - Paid scrim → require paid booking OR room membership
+    // - Free scrim → require active booking OR room membership
+    const requiresPayment = scrim.entryFee > 0;
+    const isPaidBooking = !!activeBooking?.paid;
+
+    const authorized = isOwner ||
+      isInRoom ||
+      (requiresPayment ? isPaidBooking : !!activeBooking);
+
+    if (!authorized) {
       return res.status(403).json({ message: 'Not authorized to view room' });
+    }
+
+    // Auto-enroll if they have a valid booking but aren't in the room yet
+    if (!isInRoom && activeBooking) {
+      room.participants.push({ userId, status: 'active' });
+      await room.save();
     }
 
     return res.json({ room });
@@ -715,9 +750,14 @@ export const getParticipantDetails = async (req, res) => {
     if (scrim.createdBy.toString() !== userId.toString())
       return res.status(403).json({ message: 'Only scrim owner can view participant details' });
 
-    const bookings = await Booking.find({ scrimId, status: 'active' }).populate('playerId', 'name email');
+    const bookings = await Booking.find({ scrimId, status: 'active' }).populate('playerId', 'name email') .lean();
+    // 👇 normalize a guaranteed bookedAt for UI
+    const normalized = bookings.map(b => ({
+      ...b,
+      bookedAt: b.bookedAt || b.createdAt || b.updatedAt || new Date(0),
+    }));
 
-    res.json({ participants: bookings });
+    res.json({ participants: normalized });
   } catch (error) {
     console.error('Get participant details error:', error);
     res.status(500).json({ message: 'Server error fetching participant details' });

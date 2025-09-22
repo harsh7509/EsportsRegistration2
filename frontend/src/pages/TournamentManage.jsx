@@ -10,6 +10,7 @@ import toast from 'react-hot-toast';
 import { NormalizeImageUrl } from '../utils/img';
 import { useAuth } from '../context/AuthContext';
 
+
 export default function TournamentManage() {
   const { id } = useParams();
   const navigate = useNavigate();

@@ -11,7 +11,6 @@ const ParticipantSchema = new mongoose.Schema({
   userId:       { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   ign:          { type: String, default: '' },              // legacy fallback
   // NEW: contact + team info
-  teamName: { type: String, default: '' },
   realName:     { type: String, default: '' },
   phone:        { type: String, default: '' },
   teamName:     { type: String, default: '' },

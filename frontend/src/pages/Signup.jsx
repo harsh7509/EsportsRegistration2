@@ -66,7 +66,7 @@ const Signup = () => {
   const [sending, setSending] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [cooldown, setCooldown] = useState(0); // seconds to resend
-  const { user, isAuthenticated} = useAuth();
+  const { user, isAuthenticated, adoptTokensAndLoadUser } = useAuth();
   
 
 
@@ -171,12 +171,10 @@ const Signup = () => {
       const access = res?.data?.accessToken || res?.data?.access_token || res?.data?.token;
       const refresh = res?.data?.refreshToken || res?.data?.refresh_token || null;
       if (!access) throw new Error('No token returned');
-      setTokens(access, refresh);
-
-      const me = await authAPI.getMe();
-      const role = me?.data?.user?.role || form.role;
-      toast.success('Verified! Welcome 🎉');
-      redirectByRole(role);
+      const meUser = await adoptTokensAndLoadUser(access, refresh);
+     const role = meUser?.role || form.role;
+     toast.success('Verified! Welcome 🎉');
+     redirectByRole(role);
     } catch (e) {
       console.error('verifyOtp error:', e);
       toast.error(e?.response?.data?.message || 'Invalid or expired code');

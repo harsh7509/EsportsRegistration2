@@ -6,6 +6,9 @@ import {
 import { tournamentsAPI, uploadAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
+import { useNavigate } from 'react-router-dom';
+
+
 
 const MaxLen = {
   title: 120,
@@ -135,9 +138,8 @@ const BannerDrop = ({ value, onChange, onUploadStart, onUploadEnd, disabled }) =
 
 const OrgTournamentCreate = () => {
   const { user } = useAuth();
-  if (!user || user.role !== 'organization') {
-    return <div className="p-6">Only organizations can create tournaments.</div>;
-  }
+  const navigate = useNavigate();
+   const isOrg = !!user && user.role === 'organization';
 
   const [form, setForm] = useState({
     title: '',
@@ -145,6 +147,7 @@ const OrgTournamentCreate = () => {
     description: '',
     game: '',
     rules: '',
+    prizepool: '',
     entryFee: 0,
     capacity: 20000,
     startAt: '',
@@ -182,15 +185,14 @@ const OrgTournamentCreate = () => {
         endAt: toISO(form.endAt),
         entryFee: clamp(Number(form.entryFee), 0, 1_00_00_000), // up to 1 crore (₹) if you ever need
         capacity: clamp(Number(form.capacity), 1, 1_000_000),
+        prizePool: String(form.prizePool ?? '').trim(),
+   // also send numeric form for BE convenience if user typed a number
+    prizePoolTotal: Number.isFinite(Number(form.prizePool)) ? Number(form.prizePool) : undefined,
       });
 
       toast.success('Tournament created');
-      setForm({
-        title: '', bannerUrl: '', description: '', game: '', rules: '',
-        entryFee: 0, capacity: 20000, startAt: '', endAt: ''
-      });
-      setTab('rules');
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      navigate('/dashboard');
+      
     } catch (err) {
       console.error(err);
       toast.error(err?.response?.data?.message || 'Failed to create tournament');
@@ -204,7 +206,16 @@ const OrgTournamentCreate = () => {
     return n > 0 ? `₹${n.toLocaleString('en-IN')}` : 'Free';
   }, [form.entryFee]);
 
-  return (
+   // prevent picking past times in the picker
+ const minStart = useMemo(() => {
+   const d = new Date();
+   d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+   return d.toISOString().slice(0,16); // YYYY-MM-DDTHH:mm
+ }, []);
+
+ return !isOrg ? (
+    <div className="p-6">Only organizations can create tournaments.</div>
+  ) : (
     <div className="mx-auto max-w-5xl p-6">
       {/* Heading */}
       <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -255,10 +266,11 @@ const OrgTournamentCreate = () => {
             </div>
           </div>
 
-          {/* Fee & Capacity */}
-          <div className="grid gap-4 sm:grid-cols-2">
+          {/* Fee, Prize Pool & Capacity */}
+ <div className="grid gap-4 sm:grid-cols-3">
             <div>
               <FieldLabel hint={feeLabel}>Entry Fee (₹)</FieldLabel>
+         
               <div className="relative">
                 <IndianRupee className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/50" />
                 <Input
@@ -272,6 +284,20 @@ const OrgTournamentCreate = () => {
                 />
               </div>
             </div>
+                 <div>
+    <FieldLabel hint="Number or leave blank">Prize Pool (₹)</FieldLabel>
+    <div className="relative">
+      <IndianRupee className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/50" />
+      <Input
+        type="text"
+        inputMode="decimal"
+        value={form.prizePool}
+        onChange={(e) => setForm((f) => ({ ...f, prizePool: e.target.value }))}
+        className="pl-9"
+        placeholder="e.g., 5000 (or leave empty)"
+      />
+    </div>
+  </div>
 
             <div>
               <FieldLabel hint="1 to 1,000,000">Capacity</FieldLabel>
@@ -311,7 +337,8 @@ const OrgTournamentCreate = () => {
               <FieldLabel req>Start At</FieldLabel>
               <div className="relative">
                 <Calendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/50" />
-                <Input type="datetime-local" value={form.startAt} onChange={onChange('startAt')} className="pl-9" />
+                <Input type="datetime-local" min={minStart} value={form.startAt} onChange={onChange('startAt')} className="pl-9" />
+
               </div>
             </div>
             <div>
