@@ -108,7 +108,7 @@ export default function PlayerGroupRoomModal({ open, onClose, tournamentId }) {
       } catch (e) {
         if (!cancelled) {
           console.error(e);
-          toast.error(e?.response?.data?.message || 'Failed to open group room');
+          // toast.error(e?.response?.data?.message || 'Failed to open group room');
           setGroup(null);
           setRoomId(null);
           setMessages([]);
@@ -144,7 +144,7 @@ export default function PlayerGroupRoomModal({ open, onClose, tournamentId }) {
       setTeams(Array.isArray(teamsList) ? teamsList : []);
     } catch (e) {
       console.error(e);
-      toast.error('Failed to refresh');
+      toast.error(e.response.data.message);
     } finally {
       setRefreshing(false);
     }
