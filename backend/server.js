@@ -35,8 +35,10 @@ dotenv.config();
 const FRONTEND_URL = process.env.FRONTEND_URL || 'https://arenapulse-orcin.vercel.app';
 const LOCAL_FRONTEND = 'http://localhost:5173';
 const ALLOWED_ORIGINS = [
-  FRONTEND_URL.replace(/\/+$/, ''),
-  LOCAL_FRONTEND,
+  // FRONTEND_URL.replace(/\/+$/, ''),
+  // LOCAL_FRONTEND,
+  'https://thearenapulse.xyz',
+  'https://www.thearenapulse.xyz',
   // add more if you use other preview domains
 ];
 
@@ -80,6 +82,10 @@ app.use(express.json());
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// if (process.env.NODE_ENV !== 'production') {
+//   allowed.push('http://localhost:5173');
+// }
 
 // === Env
 const PORT = process.env.PORT || 4000;
@@ -131,6 +137,9 @@ app.use('/api/orgs', orgRoutes);
 app.use('/api/organizations', orgRoutes); // alias
 app.use('/api/promos', promosRoutes);
 app.use('/api/tournaments', tournamentsRoutes);
+app.get('/health', (req, res) => res.status(200).send('ok'));
+app.get('/api/health', (req, res) => res.status(200).json({ ok: true }));
+
 
 // === Create HTTP server + Socket.IO
 const server = http.createServer(app);
@@ -142,7 +151,10 @@ const io = new SocketIOServer(server, {
   pingInterval: 25000,
   pingTimeout: 20000,
   cors: {
-    origin: ALLOWED_ORIGINS,
+    origin: [
+      'https://thearenapulse.xyz',
+      'https://www.thearenapulse.xyz',
+    ],
     methods: ['GET', 'POST'],
     allowedHeaders: ['Authorization'],
     credentials: false, // set true only if using cookies cross-site
