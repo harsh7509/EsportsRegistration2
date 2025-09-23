@@ -767,3 +767,44 @@ export const adminListScrimParticipants = async (req, res) => {
     res.status(500).json({ message: 'Server error listing participants' });
   }
 };
+// --- ADD in backend/src/controllers/AdminController.js ---
+
+export const adminUpdateOrgRating = async (req, res) => {
+  try {
+    const { ratingId } = req.params;
+    if (!isValidObjectId(ratingId)) {
+      return res.status(400).json({ message: 'Invalid ratingId' });
+    }
+
+    const { rating, comment, hidden, approved } = req.body;
+    const update = {};
+
+    if (rating != null) {
+      const r = Number(rating);
+      if (!Number.isFinite(r) || r < 1 || r > 5) {
+        return res.status(400).json({ message: 'rating must be 1-5' });
+      }
+      update.rating = r;
+    }
+    if (typeof comment === 'string') update.comment = comment.trim();
+    if (typeof hidden === 'boolean') update.hidden = hidden;
+    if (typeof approved === 'boolean') update.approved = approved;
+
+    const doc = await OrgRating.findByIdAndUpdate(
+      ratingId,
+      { $set: update },
+      { new: true, runValidators: true }
+    )
+      .populate('organizationId', 'name')
+      .populate('playerId', 'name email')
+      .populate('scrimId', 'title')
+      .lean();
+
+    if (!doc) return res.status(404).json({ message: 'Rating not found' });
+
+    return res.json({ message: 'Rating updated', rating: doc });
+  } catch (e) {
+    console.error('adminUpdateOrgRating error:', e);
+    return res.status(500).json({ message: 'Server error updating rating' });
+  }
+};

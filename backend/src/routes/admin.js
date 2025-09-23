@@ -19,6 +19,7 @@ import {
   adminRemovePlayerFromScrim,
   adminDeleteScrim,
   adminListScrimParticipants,
+  adminUpdateOrgRating,  
 } from '../controllers/AdminController.js';
 
 const router = express.Router();
@@ -60,6 +61,7 @@ router.get('/scrims/:scrimId/participants', requireAdmin, adminListScrimParticip
 router.post('/scrims/:scrimId/participants', requireAdmin, adminAddPlayerToScrim);           // body: { playerId }
 router.delete('/scrims/:scrimId/participants/:playerId', requireAdmin, adminRemovePlayerFromScrim);
 router.delete('/scrims/:scrimId', requireAdmin, adminDeleteScrim);
+router.patch('/ratings/:ratingId', requireAdmin, adminUpdateOrgRating);
 
 
 

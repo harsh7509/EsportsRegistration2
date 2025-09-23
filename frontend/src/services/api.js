@@ -300,6 +300,8 @@ updateScrim: (id, payload) => api.patch(`/admin/scrims/${id}`, payload), // ✅ 
  listScrimParticipants: (id) => api.get(`/admin/scrims/${id}/participants`),
  addPlayerToScrim: (id, playerId) => api.post(`/admin/scrims/${id}/participants`, { playerId }),
  removePlayerFromScrim: (id, playerId) => api.delete(`/admin/scrims/${id}/participants/${playerId}`),
+ updateRating: (ratingId, data) =>
+    api.patch(`/admin/ratings/${ratingId}`, data),
 
   listOrgKyc: () => api.get('/admin/org-kyc'),
   reviewOrgKyc: (userId, action, notes) =>
