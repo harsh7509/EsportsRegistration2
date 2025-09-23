@@ -26,11 +26,16 @@ export const API_BASE = `${ORIGIN}/api`;
 
 // Create axios instance
 export const api = axios.create({
+  
   baseURL: API_BASE,
   // Set to true ONLY if you actually use cookies cross-site (SameSite=None; Secure)
   withCredentials: true,
   headers: { 'Content-Type': 'application/json' },
 });
+const existing = localStorage.getItem('accessToken');
+if (existing) {
+  api.defaults.headers.common.Authorization = `Bearer ${existing}`;
+}
 
 // ========== Token management ==========
 const ACCESS_KEY = 'accessToken';
@@ -60,6 +65,7 @@ api.interceptors.request.use(
   },
   (error) => Promise.reject(error)
 );
+
 
 /**
  * 401 refresh flow:
@@ -286,6 +292,14 @@ export const adminAPI = {
 
   setOrgVerified: (userId, verified) => api.post(`/admin/orgs/${userId}/verify`, { verified }),
   setOrgRanking: (userId, ranking) => api.post(`/admin/orgs/${userId}/ranking`, { ranking }),
+
+  // src/services/api.js
+updateScrim: (id, payload) => api.patch(`/admin/scrims/${id}`, payload), // ✅ uses authorized instance
+
+ deleteScrim: (id) => api.delete(`/admin/scrims/${id}`),
+ listScrimParticipants: (id) => api.get(`/admin/scrims/${id}/participants`),
+ addPlayerToScrim: (id, playerId) => api.post(`/admin/scrims/${id}/participants`, { playerId }),
+ removePlayerFromScrim: (id, playerId) => api.delete(`/admin/scrims/${id}/participants/${playerId}`),
 
   listOrgKyc: () => api.get('/admin/org-kyc'),
   reviewOrgKyc: (userId, action, notes) =>

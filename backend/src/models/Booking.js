@@ -17,6 +17,14 @@ const bookingSchema = new mongoose.Schema(
       enum: ["active", "cancelled", "completed"],
       default: "active",
     },
+    // in Scrim schema:
+participantsMeta: [{
+  playerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  ign: String,
+  phone: String,
+  teamName: String,
+}],
+
 
     paid: { type: Boolean, default: false }, // ✅ mark after successful payment
     slotNumber: { type: Number }, // optional: if you want to assign seat numbers

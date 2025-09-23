@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Calendar, Gamepad2, Users, Trophy, Eye, Clock, Search, Filter, X,
-  ChevronLeft, ChevronRight, RefreshCw, SlidersHorizontal
+  ChevronLeft, ChevronRight, RefreshCw, SlidersHorizontal,Plus
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -181,8 +181,9 @@ const ScrimList = () => {
       const src = getDateSrc(s); if (!src) return false; return toLocalKey(src) === selectedDate;
     });
 
-  const todaysOnly = clientFiltered.filter(isToday);
-  const groups = groupByOrg(todaysOnly);
+   // if a specific date is selected, use that; otherwise default to today's scrims
+  const displayList = selectedDate ? clientFiltered : clientFiltered.filter(isToday);
+  const groups = groupByOrg(displayList);
   const headerCount = useMemo(() => groups.reduce((acc, g) => acc + g.scrims.length, 0), [groups]);
   const orgCount = useMemo(() => groups.length, [groups]);
 
@@ -207,7 +208,10 @@ const ScrimList = () => {
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
               <h1 className="text-2xl font-bold flex items-center gap-2">
-                Today’s Scrims
+                {selectedDate
+                  ? `Scrims on ${new Date(selectedDate).toLocaleDateString()}`
+                  : 'Today’s Scrims'}
+
                 <span className="text-xs font-medium rounded-full bg-white/10 px-2 py-0.5 text-white/70">
                   {orgCount} orgs • {headerCount} matches
                 </span>
@@ -286,6 +290,16 @@ const ScrimList = () => {
               >
                 <RefreshCw className="h-4 w-4" /> Clear
               </button>
+              {/* Org-only action */}
+              {user?.role === 'organization' && (
+                <Link
+                  to="/scrims/new"
+                  className="inline-flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-sm font-semibold text-gray-900 hover:bg-white/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+                  title="Create a new scrim"
+                >
+                  <Plus className="h-4 w-4" /> Create Scrim
+                </Link>
+              )}
             </div>
           </div>
 

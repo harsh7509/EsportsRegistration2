@@ -78,6 +78,14 @@ export const AuthProvider = ({ children }) => {
     (async () => {
       try {
         const token = getToken(); // from your services/api storage
+        if (token) {
+       // set Authorization immediately for all api calls
+       // (doesn't require refresh token)
+       // we don't want to call setTokens() without refresh, just set header:
+       import('../services/api').then(({ api }) => {
+         api.defaults.headers.common.Authorization = `Bearer ${token}`;
+       });
+     }
         const storedUser = localStorage.getItem('user');
 
         if (token && storedUser) {

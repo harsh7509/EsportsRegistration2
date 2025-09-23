@@ -388,7 +388,7 @@ const Landing = () => {
       </section>
 
       {/* Community Preview */}
-      <section className="bg-[#0b0b12] py-14">
+      {/* <section className="bg-[#0b0b12] py-14">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <SectionHeader title="Community Hub" cta="Open Hub" to="/community" />
           <div className="grid gap-6 md:grid-cols-3">
@@ -408,7 +408,7 @@ const Landing = () => {
             ))}
           </div>
         </div>
-      </section>
+      </section> */}
 
       {/* Footer */}
       <footer className="border-t border-white/10 bg-[#0e0e17] py-10">

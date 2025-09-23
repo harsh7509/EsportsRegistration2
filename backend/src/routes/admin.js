@@ -1,5 +1,5 @@
 import express from 'express';
-import { authenticate, roleGuard } from '../middlewares/auth.js';
+import { authenticate, roleGuard, requireAdmin } from '../middlewares/auth.js';
 import { listOrgKyc, reviewOrgKyc } from '../controllers/OrgKycController.js';
 import {
   getDashboardStats,
@@ -14,6 +14,11 @@ import {
   updateUserProfileAdmin,
   listScrims, listTournaments, listBookings, listPayments, listOrgRatings,
   setOrgVerified, setOrgRanking,
+  adminUpdateScrim,
+  adminAddPlayerToScrim,
+  adminRemovePlayerFromScrim,
+  adminDeleteScrim,
+  adminListScrimParticipants,
 } from '../controllers/AdminController.js';
 
 const router = express.Router();
@@ -48,6 +53,13 @@ router.get('/ratings', listOrgRatings);
 // NEW: org controls
 router.post('/orgs/:userId/verify', setOrgVerified);
 router.post('/orgs/:userId/ranking', setOrgRanking);
+
+
+router.patch('/scrims/:scrimId', requireAdmin, adminUpdateScrim);
+router.get('/scrims/:scrimId/participants', requireAdmin, adminListScrimParticipants);
+router.post('/scrims/:scrimId/participants', requireAdmin, adminAddPlayerToScrim);           // body: { playerId }
+router.delete('/scrims/:scrimId/participants/:playerId', requireAdmin, adminRemovePlayerFromScrim);
+router.delete('/scrims/:scrimId', requireAdmin, adminDeleteScrim);
 
 
 

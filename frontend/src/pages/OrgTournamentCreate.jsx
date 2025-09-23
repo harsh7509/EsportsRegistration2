@@ -2,6 +2,7 @@ import React, { useMemo, useRef, useState } from 'react';
 import {
   Image as ImageIcon, X, Upload, Loader2, Calendar, Users, IndianRupee, Hash, FileText,
   Eye, Edit3, Plus, Minus, CheckCircle2, AlertCircle
+
 } from 'lucide-react';
 import { tournamentsAPI, uploadAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -275,7 +276,7 @@ const OrgTournamentCreate = () => {
                 <IndianRupee className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/50" />
                 <Input
                   type="number"
-                  min={0}
+                  min={0} 
                   step="1"
                   value={form.entryFee}
                   onChange={onChange('entryFee')}
@@ -285,7 +286,7 @@ const OrgTournamentCreate = () => {
               </div>
             </div>
                  <div>
-    <FieldLabel hint="Number or leave blank">Prize Pool (₹)</FieldLabel>
+    <FieldLabel hint="">Prize Pool (₹)</FieldLabel>
     <div className="relative">
       <IndianRupee className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/50" />
       <Input
@@ -294,13 +295,13 @@ const OrgTournamentCreate = () => {
         value={form.prizePool}
         onChange={(e) => setForm((f) => ({ ...f, prizePool: e.target.value }))}
         className="pl-9"
-        placeholder="e.g., 5000 (or leave empty)"
+        placeholder="e.g., 5000 "
       />
     </div>
   </div>
 
             <div>
-              <FieldLabel hint="1 to 1,000,000">Capacity</FieldLabel>
+              <FieldLabel hint="1 to 1,000,000">Slots</FieldLabel>
               <div className="flex">
                 <button
                   type="button"
@@ -327,7 +328,7 @@ const OrgTournamentCreate = () => {
                   <Plus className="h-4 w-4" />
                 </button>
               </div>
-              <p className="mt-1 text-[11px] text-white/50">Large events supported (20,000+ players).</p>
+              {/* <p className="mt-1 text-[11px] text-white/50">Large events supported (20,000+ players).</p> */}
             </div>
           </div>
 
