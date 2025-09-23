@@ -12,7 +12,7 @@ import axios from 'axios';
 const RAW_ORIGIN =
   import.meta.env.VITE_API_URL ??
   import.meta.env.VITE_API_BASE_URL ??
-  (import.meta.env.DEV ? 'http://localhost:4000' : null);
+  (import.meta.env.DEV ? 'https://api.thearenapulse.xyz/' : null);
 
 if (!RAW_ORIGIN) {
   // Crash loud in production to avoid silently hitting localhost

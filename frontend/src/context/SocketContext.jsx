@@ -16,11 +16,8 @@ export const SocketProvider = ({ children }) => {
   const ENABLE_SOCKET = (import.meta.env.VITE_ENABLE_SOCKET ?? 'true') !== 'false';
 
   // Prefer env; dev fallback only
-  const SOCKET_URL = useMemo(() => {
-    const envUrl = import.meta.env.VITE_SOCKET_URL;
-    if (envUrl) return envUrl.replace(/\/+$/, '');
-    return import.meta.env.DEV ? 'http://localhost:4000' : 'https://esportsregistration2.onrender.com';
-  }, []);
+  const SOCKET_URL =
+  import.meta.env.VITE_SOCKET_URL || import.meta.env.VITE_API_URL;
 
   useEffect(() => {
     if (!ENABLE_SOCKET || !isAuthenticated || !SOCKET_URL) {
