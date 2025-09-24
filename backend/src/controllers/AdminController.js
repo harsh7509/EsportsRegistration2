@@ -5,6 +5,7 @@ import Booking from '../models/Booking.js';
 import Payment from '../models/Payment.js';
 import Promotion from '../models/Promotion.js';
 import OrgRating from '../models/OrgRating.js';
+import { withTransaction, deleteUserCascade } from '../services/cascadeDelete.js';
 
 const { isValidObjectId } = mongoose; // <-- ADD THIS
 
@@ -154,6 +155,9 @@ export const deleteUser = async (req, res) => {
 
     // ⚠️ Consider soft-delete or cascades (scrims, bookings, ratings, promotions)
     await User.findByIdAndDelete(userId);
+    await withTransaction(async (session) => {
+      await deleteUserCascade(userId, session);
+    });
     res.json({ message: 'User deleted successfully' });
   } catch (error) {
     console.error('Delete user error:', error);

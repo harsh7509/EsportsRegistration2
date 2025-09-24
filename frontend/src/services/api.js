@@ -12,7 +12,7 @@ import axios from 'axios';
 const RAW_ORIGIN =
   import.meta.env.VITE_API_URL ??
   import.meta.env.VITE_API_BASE_URL ??
-  (import.meta.env.DEV ? 'https://api.thearenapulse.xyz/' : null);
+  (import.meta.env.DEV ? 'http://localhost:4000' : null);
 
 if (!RAW_ORIGIN) {
   // Crash loud in production to avoid silently hitting localhost
@@ -29,7 +29,7 @@ export const api = axios.create({
   
   baseURL: API_BASE,
   // Set to true ONLY if you actually use cookies cross-site (SameSite=None; Secure)
-  withCredentials: true,
+  withCredentials: false,
   headers: { 'Content-Type': 'application/json' },
 });
 const existing = localStorage.getItem('accessToken');

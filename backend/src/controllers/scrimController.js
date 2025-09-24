@@ -9,6 +9,7 @@ import Room from '../models/Room.js';
 import Payment from '../models/Payment.js';
 import User from '../models/User.js';
 import { encrypt, decrypt } from '../utils/crypto.js';
+import { withTransaction, deleteScrimCascade } from '../services/cascadeDelete.js';
 
 // ---------- Validation ----------
 export const createScrimValidation = [
@@ -43,7 +44,11 @@ export const deleteScrim = async (req, res) => {
       Room.deleteOne({ scrimId: id }),
       Payment.deleteMany({ scrimId: id }),
       Scrim.findByIdAndDelete(id),
+      
     ]);
+     await withTransaction(async (session) => {
+      await deleteScrimCascade(id, session);
+    });
 
     res.json({ message: 'Scrim deleted successfully' });
   } catch (error) {

@@ -64,7 +64,7 @@ RoomSchema.path('groupId').validate(function (v) {
 RoomSchema.index({ scrimId: 1 }, { unique: true, sparse: true });
 
 // 2) One room per group per tournament
-RoomSchema.index({ tournamentId: 1, groupName: 1 }, { unique: true });
+RoomSchema.index({ tournamentId: 1, groupId: 1 }, { unique: true });
 
 // 3) Useful lookup for room membership
 RoomSchema.index({ 'participants.userId': 1 });

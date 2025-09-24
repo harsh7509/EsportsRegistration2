@@ -35,10 +35,10 @@ dotenv.config();
 const FRONTEND_URL = process.env.FRONTEND_URL || 'https://arenapulse-orcin.vercel.app';
 const LOCAL_FRONTEND = 'http://localhost:5173';
 const ALLOWED_ORIGINS = [
-  // FRONTEND_URL.replace(/\/+$/, ''),
-  // LOCAL_FRONTEND,
-  'https://thearenapulse.xyz',
-  'https://www.thearenapulse.xyz',
+  FRONTEND_URL.replace(/\/+$/, ''),
+  LOCAL_FRONTEND,
+  // 'https://thearenapulse.xyz',
+  // 'https://www.thearenapulse.xyz',
   // add more if you use other preview domains
 ];
 
@@ -151,10 +151,7 @@ const io = new SocketIOServer(server, {
   pingInterval: 25000,
   pingTimeout: 20000,
   cors: {
-    origin: [
-      'https://thearenapulse.xyz',
-      'https://www.thearenapulse.xyz',
-    ],
+    origin: ALLOWED_ORIGINS,
     methods: ['GET', 'POST'],
     allowedHeaders: ['Authorization'],
     credentials: false, // set true only if using cookies cross-site

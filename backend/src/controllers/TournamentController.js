@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import moment from 'moment-timezone';
 import Tournament from '../models/Tournament.js';
 import Room from '../models/Room.js';
+import { withTransaction, deleteTournamentCascade } from '../services/cascadeDelete.js';
 import User from '../models/User.js';
 
 
@@ -508,6 +509,9 @@ export const deleteTournament = async (req, res) => {
 
     await Room.deleteMany({ tournamentId: id });
     await Tournament.deleteOne({ _id: id });
+    await withTransaction(async (session) => {
+      await deleteTournamentCascade(id, session);
+    });
     return res.json({ ok: true });
   } catch (e) {
     console.error('deleteTournament error:', e);
@@ -578,17 +582,23 @@ export const autoGroup = async (req, res) => {
       return res.status(403).json({ message: 'Not allowed' });
     }
 
+    // ✅ 1) Purge old rooms for this tournament (clean slate)
+    await Room.deleteMany({ tournamentId: id });
+
+    // participants → ids
     const raw = Array.isArray(t.participants) ? t.participants : [];
     const ids = raw
       .map(p => (p?.userId && p.userId._id) ? p.userId._id : p?.userId)
       .filter(Boolean)
       .map(String);
 
+    // shuffle
     for (let i = ids.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [ids[i], ids[j]] = [ids[j], ids[i]];
     }
 
+    // groups
     const groups = [];
     for (let i = 0, n = 1; i < ids.length; i += size, n++) {
       const memberIds = ids.slice(i, i + size).map(x => new mongoose.Types.ObjectId(x));
@@ -606,6 +616,7 @@ export const autoGroup = async (req, res) => {
       { runValidators: false }
     );
 
+    // rooms create + attach
     for (const g of groups) {
       const room = await Room.create({
         tournamentId: new mongoose.Types.ObjectId(id),
@@ -621,25 +632,25 @@ export const autoGroup = async (req, res) => {
         settings: { onlyOrgCanMessage: true },
       });
 
+      // ✅ 2) Typo fix: room._id
       await Tournament.updateOne(
         { _id: id, 'groups._id': g._id },
-        { $set: { 'groups.$.roomId': room._._id } } // typo fix not needed; leaving original approach
-      ).catch(async () => {
-        await Tournament.updateOne(
-          { _id: id, 'groups._id': g._id },
-          { $set: { 'groups.$.roomId': room._id } },
-          { runValidators: false }
-        );
-      });
+        { $set: { 'groups.$.roomId': room._id } },
+        { runValidators: false }
+      );
     }
 
-    const fresh = await Tournament.findById(id).populate('groups.memberIds', 'name avatarUrl').lean();
+    const fresh = await Tournament.findById(id)
+      .populate('groups.memberIds', 'name avatarUrl')
+      .lean();
+
     return res.json({ groups: fresh?.groups || [] });
   } catch (e) {
     console.error('autoGroup error:', e);
     return res.status(500).json({ message: 'Failed to create groups / rooms' });
   }
 };
+
 
 export const editGroupRoomMessage = async (req, res) => {
   try {
@@ -1364,7 +1375,7 @@ export const deleteGroupRoom = async (req, res) => {
         { runValidators: false }
       );
     } else {
-      const gone = await Room.findOneAndDelete({ tournamentId: id, groupName: g.name });
+      const gone = await Room.findOneAndDelete({ tournamentId: id, groupId: groupId });
       if (gone) deletedRoomId = gone._id;
     }
 
