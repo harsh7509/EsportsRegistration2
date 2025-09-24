@@ -37,8 +37,8 @@ const LOCAL_FRONTEND = 'http://localhost:5173';
 const ALLOWED_ORIGINS = [
   FRONTEND_URL.replace(/\/+$/, ''),
   LOCAL_FRONTEND,
-  // 'https://thearenapulse.xyz',
-  // 'https://www.thearenapulse.xyz',
+  'https://thearenapulse.xyz',
+  'https://www.thearenapulse.xyz',
   // add more if you use other preview domains
 ];
 
