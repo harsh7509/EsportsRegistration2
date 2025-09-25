@@ -122,7 +122,8 @@ const Signup = () => {
       if (res?.data?.otpRequired) {
         setTempToken(res.data.tempToken);
         setOtpStep(true);
-        setCooldown(30); // start resend timer
+        setCooldown(20); // start resend timer
+        sendEmailOtp(); 
         toast.success('We sent a verification code to your email.');
         return;
       }
@@ -153,7 +154,7 @@ const Signup = () => {
     setSending(true);
     try {
       await authAPI.sendOtp({ tempToken }); // email-only
-      setCooldown(30);
+      setCooldown(20);
       toast.success('OTP sent to your email.');
     } catch (e) {
       console.error('sendOtp error:', e);

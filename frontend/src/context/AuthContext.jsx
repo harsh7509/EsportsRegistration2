@@ -136,44 +136,32 @@ export const AuthProvider = ({ children }) => {
     return user;
   };
 
-  const login = async (credentials) => {
-    dispatch({ type: 'LOGIN_START' });
-    try {
-      console.log('🔐 Attempting login with:', credentials.email);
+const login = async ({ email, password }) => {
+  dispatch({ type: 'LOGIN_START' });
+  try {
+    const res = await authAPI.login({ email, password });
+    const { accessToken, refreshToken, user: u } = res.data || {};
 
-      const resp = await authAPI.login(credentials);
-      const data = resp?.data ?? resp ?? {};
-
-      const accessToken =
-        data.accessToken || data.access_token || data.token || null;
-      const refreshToken =
-        data.refreshToken || data.refresh_token || null;
-
-      // ✅ Set tokens FIRST so subsequent calls have Authorization header
-      if (accessToken || refreshToken) {
-        setTokens(accessToken || '', refreshToken || '');
-      }
-
-      // Prefer user from response; if absent, fetch /auth/me (now authorized)
-      let user = data.user ?? null;
-      if (!user && accessToken) {
-        user = await fetchMeSafe();
-      }
-
-      if (user) localStorage.setItem('user', JSON.stringify(user));
-
-      dispatch({ type: 'LOGIN_SUCCESS', payload: { user } });
-      return { success: true, user };
-    } catch (error) {
-      console.error('❌ Login failed:', error);
-      const message =
-        error?.response?.data?.message ||
-        error?.message ||
-        'Login failed';
-      dispatch({ type: 'LOGIN_FAILURE', payload: message });
-      return { success: false, error: message };
+    if (!accessToken || !u) {
+      dispatch({ type: 'LOGIN_FAILURE', payload: 'Invalid server response' });
+      return { success: false, error: 'Invalid server response' };
     }
-  };
+
+    // make subsequent calls authorized
+    setTokens(accessToken, refreshToken);
+
+    // store user now so UI can redirect without fetching /auth/me
+    localStorage.setItem('user', JSON.stringify(u));
+
+    dispatch({ type: 'LOGIN_SUCCESS', payload: { user: u } });
+    return { success: true, user: u };
+  } catch (e) {
+    const errMsg = e?.response?.data?.message || 'Login failed';
+    dispatch({ type: 'LOGIN_FAILURE', payload: errMsg });
+    return { success: false, error: errMsg };
+  }
+};
+
 
   const register = async (userData) => {
     dispatch({ type: 'LOGIN_START' });
