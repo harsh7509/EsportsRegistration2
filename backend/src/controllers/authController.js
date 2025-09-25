@@ -1,32 +1,30 @@
-// backend/src/controllers/authController.js
 import 'dotenv/config';
 import jwt from 'jsonwebtoken';
 import { body, validationResult } from 'express-validator';
 import crypto from 'crypto';
+import nodemailer from 'nodemailer';
 import bcrypt from 'bcryptjs';
-import { sendEmail } from '../utils/mailer.js';
 
 import User from '../models/User.js';
 import TempSignup from '../models/TempSignup.js';
+import { sendEmail } from '../utils/mailer.js';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
+
 
 const sha256 = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
 const genCode = () => String(Math.floor(100000 + Math.random() * 900000));
 const signTempToken = (email) => jwt.sign({ email, kind: 'signup_otp' }, JWT_SECRET, { expiresIn: '10m' });
 
+
+
+// (optional) verify once at boot so you immediately see if SMTP is reachable
+
+
 const issueTokens = (user) => {
-  const accessToken = jwt.sign(
-    { uid: user._id, r: user.role },
-    JWT_SECRET,
-    { expiresIn: process.env.TOKEN_EXPIRES_IN || '15m' }
-  );
-  const refreshToken = jwt.sign(
-    { uid: user._id },
-    JWT_REFRESH_SECRET,
-    { expiresIn: process.env.REFRESH_EXPIRES_IN || '7d' }
-  );
+  const accessToken = jwt.sign({ userId: user._id }, JWT_SECRET, { expiresIn: process.env.TOKEN_EXPIRES_IN || '15m' });
+  const refreshToken = jwt.sign({ userId: user._id }, JWT_REFRESH_SECRET, { expiresIn: process.env.REFRESH_EXPIRES_IN || '7d' });
   return { accessToken, refreshToken };
 };
 
@@ -42,7 +40,20 @@ export const loginValidation = [
   body('password').notEmpty().withMessage('Password required'),
 ];
 
-/* ====================== REGISTER (staged) ====================== */
+
+
+const getEmailFromTempToken = (tempToken) => {
+  try {
+    const payload = jwt.verify(tempToken, JWT_SECRET);
+    if (payload.kind !== 'signup_otp') return null;
+    return String(payload.email || '').toLowerCase();
+  } catch {
+    return null;
+  }
+};
+
+/* ====================== REGISTER (STAGED) ====================== */
+/** POST /api/auth/register */
 export const register = async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -62,22 +73,12 @@ export const register = async (req, res) => {
 
     await TempSignup.findOneAndUpdate(
       { email },
-      {
-        email,
-        name: String(name || '').trim(),
-        role,
-        passwordHash,
-        otpHash: null,
-        otpExpiresAt: null,
-        otpAttempts: 0,
-        createdAt: new Date(),
-      },
+      { email, name: String(name || '').trim(), role, passwordHash, otpHash: null, otpExpiresAt: null, otpAttempts: 0, createdAt: new Date() },
       { upsert: true, new: true }
     );
 
     const tempToken = signTempToken(email);
 
-    // generate & store OTP
     const code = genCode();
     await TempSignup.updateOne(
       { email },
@@ -91,7 +92,7 @@ export const register = async (req, res) => {
       message: 'Please check your email for the verification code',
     });
 
-    // fire-and-forget email (never touch res after this)
+    // send email in background
     setImmediate(async () => {
       try {
         await sendEmail({
@@ -100,19 +101,21 @@ export const register = async (req, res) => {
           text: `Your verification code is ${code}. It expires in 10 minutes.`,
           html: `<p>Your verification code is <b>${code}</b>. It expires in 10 minutes.</p>`,
         });
-      } catch (e) {
-        console.error('sendMail error (register):', e?.message || e);
+      } catch (err) {
+        console.error('sendMail error (register):', err);
       }
     });
   } catch (e) {
     console.error('register error:', e);
-    if (!res.headersSent) {
-      return res.status(500).json({ message: 'Registration failed' });
-    }
+    if (!res.headersSent) return res.status(500).json({ message: 'Registration failed' });
   }
 };
 
+
+
+
 /* ====================== LOGIN ====================== */
+/** POST /api/auth/login */
 export const login = async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -122,22 +125,31 @@ export const login = async (req, res) => {
     const email = String(req.body.email || '').toLowerCase().trim();
     const password = String(req.body.password || '');
 
+    // Fast lookup: ensure email is indexed unique in your User schema
     const user = await User.findOne({ email })
       .select('_id name email role password avatarUrl organizationInfo reputation createdAt emailVerified')
       .lean();
+
     if (!user) return res.status(400).json({ message: 'Invalid credentials' });
 
     const ok = await bcrypt.compare(password, user.password);
     if (!ok) return res.status(400).json({ message: 'Invalid credentials' });
 
+    // Optional “auto-admin” rule (keep if you need it; done without an extra read)
     if (email === 'harsh.2201301022@geetauniversity.edu.in' && user.role !== 'admin') {
       await User.updateOne({ _id: user._id }, { $set: { role: 'admin' } });
       user.role = 'admin';
     }
 
-    const { accessToken, refreshToken } = issueTokens(user);
-    const { password: _pw, ...safeUser } = user;
+    // Small JWT payloads = faster sign & smaller headers
+    const accessToken = jwt.sign({ uid: user._id, r: user.role }, JWT_SECRET, {
+      expiresIn: process.env.TOKEN_EXPIRES_IN || '15m',
+    });
+    const refreshToken = jwt.sign({ uid: user._id }, JWT_REFRESH_SECRET, {
+      expiresIn: process.env.REFRESH_EXPIRES_IN || '7d',
+    });
 
+    const { password: _pw, ...safeUser } = user;
     return res.json({ user: { ...safeUser, id: safeUser._id }, accessToken, refreshToken });
   } catch (e) {
     console.error('login error:', e);
@@ -152,8 +164,7 @@ export const refresh = async (req, res) => {
     if (!refreshToken) return res.status(401).json({ message: 'Refresh token required' });
 
     const decoded = jwt.verify(refreshToken, JWT_REFRESH_SECRET);
-    const userId = decoded.uid || decoded.userId; // accept either shape
-    const user = await User.findById(userId);
+    const user = await User.findById(decoded.userId);
     if (!user) return res.status(401).json({ message: 'Invalid refresh token' });
 
     const { accessToken } = issueTokens(user);
@@ -187,6 +198,7 @@ export const updateProfile = async (req, res) => {
     const payload = {};
 
     if (typeof name === 'string' && name.trim()) payload.name = name.trim();
+
     const resolvedAvatar =
       (typeof avatarUrl === 'string' && avatarUrl.trim()) ||
       (typeof imageUrl === 'string' && imageUrl.trim()) ||
@@ -261,7 +273,8 @@ export const switchRole = async (req, res) => {
   }
 };
 
-/* ====================== OTP ====================== */
+/* ====================== OTP (TempSignup) ====================== */
+/** POST /api/auth/otp/send { tempToken } */
 export const sendOtp = async (req, res) => {
   try {
     const { tempToken } = req.body || {};
@@ -274,8 +287,8 @@ export const sendOtp = async (req, res) => {
     if (payload.kind !== 'signup_otp') return res.status(400).json({ message: 'Invalid OTP purpose' });
 
     const email = String(payload.email || '').toLowerCase();
-    const t = await TempSignup.findOne({ email }).lean();
-    if (!t) return res.status(400).json({ message: 'No staged signup found' });
+    const staged = await TempSignup.findOne({ email }).lean();
+    if (!staged) return res.status(400).json({ message: 'No staged signup found' });
 
     const code = genCode();
     await TempSignup.updateOne(
@@ -283,10 +296,8 @@ export const sendOtp = async (req, res) => {
       { $set: { otpHash: sha256(code), otpExpiresAt: new Date(Date.now() + 10 * 60 * 1000), otpAttempts: 0 } }
     );
 
-    // respond immediately
     res.status(202).json({ ok: true });
 
-    // send in background
     setImmediate(async () => {
       try {
         await sendEmail({
@@ -295,8 +306,8 @@ export const sendOtp = async (req, res) => {
           text: `Your code is ${code}. It expires in 10 minutes.`,
           html: `<p>Your code is <b>${code}</b>. It expires in 10 minutes.</p>`,
         });
-      } catch (e) {
-        console.error('sendMail error (sendOtp):', e?.message || e);
+      } catch (err) {
+        console.error('sendMail error (resend):', err);
       }
     });
   } catch (e) {
@@ -305,6 +316,10 @@ export const sendOtp = async (req, res) => {
   }
 };
 
+
+
+
+/** POST /api/auth/otp/verify  body: { tempToken, code } */
 export const verifyOtp = async (req, res) => {
   try {
     const { tempToken, code } = req.body || {};
@@ -334,6 +349,7 @@ export const verifyOtp = async (req, res) => {
     await t.save();
     if (!ok) return res.status(400).json({ message: 'Invalid code' });
 
+    // Create real user NOW, with pre-hashed password injected
     const alreadyUser = await User.findOne({ email }).lean();
     if (alreadyUser) {
       await TempSignup.deleteOne({ email });
@@ -346,7 +362,7 @@ export const verifyOtp = async (req, res) => {
       email: t.email,
       role: t.role,
       password: t.passwordHash,      // already hashed
-      isPasswordHashed: true,        // your schema should skip re-hash
+      isPasswordHashed: true,        // tells pre-save hook to not re-hash
       emailVerified: true,
       phoneVerified: false,
     });
