@@ -10,6 +10,7 @@ import TempSignup from '../models/TempSignup.js';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
+const is465 = Number(process.env.SMTP_PORT || 465) === 465;
 
 export const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST || 'smtp.gmail.com',
