@@ -31,6 +31,7 @@ dotenv.config();
 
 
 
+
 // --- put these near the top (after imports, before app = express()) ---
 const FRONTEND_URL = process.env.FRONTEND_URL || 'https://arenapulse-orcin.vercel.app';
 const LOCAL_FRONTEND = 'http://localhost:5173';
@@ -59,6 +60,7 @@ const corsOptions = {
 
 // --- after you create app ---
 const app = express();
+app.set('trust proxy', 1);
 
 // Ensure CORS headers are set on *all* responses (including errors)
 app.use((req, res, next) => {

@@ -85,7 +85,6 @@ export const register = async (req, res) => {
 
     const passwordHash = await bcrypt.hash(password, 10);
 
-    // upsert into staging
     await TempSignup.findOneAndUpdate(
       { email },
       {
@@ -96,62 +95,61 @@ export const register = async (req, res) => {
         otpHash: null,
         otpExpiresAt: null,
         otpAttempts: 0,
-        createdAt: new Date()
+        createdAt: new Date(),
       },
       { upsert: true, new: true }
     );
 
-    // temp token bound to email
     const tempToken = signTempToken(email);
 
-    // generate OTP and store (do NOT await email send before responding)
     const code = genCode();
     await TempSignup.updateOne(
       { email },
       { $set: { otpHash: sha256(code), otpExpiresAt: new Date(Date.now() + 10 * 60 * 1000), otpAttempts: 0 } }
     );
 
-    // respond fast
-    res.status(201).json({ otpRequired: true, tempToken });
-setImmediate(async () => {
-  try {
-    await transporter.sendMail({ /* ... */ });
-  } catch (e) { console.error('sendMail error:', e); }
-});
+    // ✅ send the HTTP response first
+    res.status(201).json({
+      otpRequired: true,
+      tempToken,
+      message: 'Please check your email for the verification code',
+    });
 
-function withTimeout(promise, ms = 8000) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => setTimeout(() => reject(new Error('SMTP timeout')), ms)),
-  ]);
-}
-
-    // send email AFTER response (non-blocking)
+    // ✅ then fire-and-forget the email, and NEVER re-touch res here
     const canSend = process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS;
-    ssetImmediate(async () => {
-  try {
-    if (canSend) {
-      await withTimeout(
-        transporter.sendMail({
-          from: process.env.MAIL_FROM || process.env.SMTP_USER, // <- safer default
-          to: email,
-          subject: 'Verify your account',
-          text: `Your verification code is ${code}. It expires in 10 minutes.`,
-          html: `<p>Your verification code is <b>${code}</b>. It expires in 10 minutes.</p>`,
-        })
-      );
-    } else {
-      console.log('[DEV][OTP]', email, 'code =', code);
-    }
-  } catch (e) {
-    console.error('sendMail error (register):', e);
-  }
-});
+
+    // (optional) tiny helper so a stuck SMTP doesn’t tie the event loop
+    const withTimeout = (p, ms = 8000) =>
+      Promise.race([p, new Promise((_, r) => setTimeout(() => r(new Error('SMTP timeout')), ms))]);
+
+    setImmediate(async () => {
+      try {
+        if (canSend) {
+          await withTimeout(
+            transporter.sendMail({
+              from: process.env.MAIL_FROM || process.env.SMTP_USER || 'no-reply@example.com',
+              to: email,
+              subject: 'Verify your account',
+              text: `Your verification code is ${code}. It expires in 10 minutes.`,
+              html: `<p>Your verification code is <b>${code}</b>. It expires in 10 minutes.</p>`,
+            })
+          );
+        } else {
+          console.log('[DEV][OTP]', email, 'code =', code);
+        }
+      } catch (e) {
+        console.error('sendMail error (register):', e);
+      }
+    });
   } catch (e) {
     console.error('register error:', e);
-    return res.status(500).json({ message: 'Registration failed' });
+    // only send an error if we have NOT sent a response yet
+    if (!res.headersSent) {
+      return res.status(500).json({ message: 'Registration failed' });
+    }
   }
 };
+
 
 
 /* ====================== LOGIN ====================== */
