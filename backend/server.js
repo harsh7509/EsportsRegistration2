@@ -60,7 +60,7 @@ const corsOptions = {
 
 // --- after you create app ---
 const app = express();
-app.set('trust proxy', 1);
+
 
 // Ensure CORS headers are set on *all* responses (including errors)
 app.use((req, res, next) => {
@@ -159,6 +159,8 @@ const io = new SocketIOServer(server, {
   },
 });
 
+
+
 // If you have any HTTPS-enforce middleware, make sure it EXEMPTS /socket.io
 // Example (uncomment if you enforce https yourself):
 // app.use((req, res, next) => {
@@ -206,6 +208,7 @@ io.on('connection', (socket) => {
 
 // Share io with routes/controllers if needed
 app.set('io', io);
+app.set('trust proxy', 1);
 
 // === Cleanup job (purge scrims > 7 days after end; keep org ratings)
 const CLEANUP_EVERY_HOURS = Number(process.env.CLEANUP_EVERY_HOURS || 24);

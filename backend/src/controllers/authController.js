@@ -12,24 +12,34 @@ const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
 
 export const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: Number(process.env.SMTP_PORT || 587),
-  secure: Number(process.env.SMTP_PORT) === 465,   // false for 587
-  auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-  pool: true,
-  maxConnections: 5,
-  maxMessages: 100,
-  // be nice to shared SMTP
-  rateDelta: 1000,
-  rateLimit: 5,
-  requireTLS: true,
-  tls: {
-    minVersion: 'TLSv1.2',
-    // ca: fs.readFileSync(...) // only if your SMTP needs custom CA
+  host: process.env.SMTP_HOST || 'smtp.gmail.com',
+  port: Number(process.env.SMTP_PORT || 465),
+  secure: is465,                 // true for 465, false for 587
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: (process.env.SMTP_PASS || '').replace(/\s+/g, ''), // strip accidental spaces
   },
-  
-  // logger: true, // enable temporarily if you need to debug SMTP in prod
+  // keep it simple; pooling can trigger timeouts on cold starts
+  pool: false,
+  // short timeouts so you fail fast instead of hanging
+  connectionTimeout: 10000,
+  greetingTimeout: 10000,
+  socketTimeout: 10000,
+  // modern TLS
+  requireTLS: true,
+  tls: { minVersion: 'TLSv1.2' },
+  // enable logs while diagnosing (turn off after it works)
+  logger: true,
+  debug: true,
 });
+
+// (optional) verify once at boot so you immediately see if SMTP is reachable
+try {
+  await transporter.verify();
+  console.log('✉️  SMTP ready');
+} catch (err) {
+  console.error('✉️  SMTP verify failed:', err);
+}
 transporter.verify()
   .then(() => console.log('✉️  SMTP ready'))
   .catch(err => console.error('✉️  SMTP verify failed:', err));
@@ -123,24 +133,18 @@ export const register = async (req, res) => {
       Promise.race([p, new Promise((_, r) => setTimeout(() => r(new Error('SMTP timeout')), ms))]);
 
     setImmediate(async () => {
-      try {
-        if (canSend) {
-          await withTimeout(
-            transporter.sendMail({
-              from: process.env.MAIL_FROM || process.env.SMTP_USER || 'no-reply@example.com',
-              to: email,
-              subject: 'Verify your account',
-              text: `Your verification code is ${code}. It expires in 10 minutes.`,
-              html: `<p>Your verification code is <b>${code}</b>. It expires in 10 minutes.</p>`,
-            })
-          );
-        } else {
-          console.log('[DEV][OTP]', email, 'code =', code);
-        }
-      } catch (e) {
-        console.error('sendMail error (register):', e);
-      }
+  try {
+    await transporter.sendMail({
+      from: process.env.MAIL_FROM || process.env.SMTP_USER,
+      to: email,
+      subject: 'Verify your account',
+      text: `Your verification code is ${code}. It expires in 10 minutes.`,
+      html: `<p>Your verification code is <b>${code}</b>. It expires in 10 minutes.</p>`,
     });
+  } catch (e) {
+    console.error('sendMail error (register):', e);
+  }
+});
   } catch (e) {
     console.error('register error:', e);
     // only send an error if we have NOT sent a response yet
