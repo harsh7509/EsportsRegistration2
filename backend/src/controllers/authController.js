@@ -1,53 +1,32 @@
+// backend/src/controllers/authController.js
 import 'dotenv/config';
 import jwt from 'jsonwebtoken';
 import { body, validationResult } from 'express-validator';
 import crypto from 'crypto';
-import nodemailer from 'nodemailer';
 import bcrypt from 'bcryptjs';
+import { sendEmail } from '../utils/mailer.js';
 
 import User from '../models/User.js';
 import TempSignup from '../models/TempSignup.js';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
-const is465 = Number(process.env.SMTP_PORT || 465) === 465;
 
-export const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || 'smtp.gmail.com',
-  port: Number(process.env.SMTP_PORT || 465),
-  secure: is465,                 // true for 465, false for 587
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: (process.env.SMTP_PASS || '').replace(/\s+/g, ''), // strip accidental spaces
-  },
-  // keep it simple; pooling can trigger timeouts on cold starts
-  pool: false,
-  // short timeouts so you fail fast instead of hanging
-  connectionTimeout: 10000,
-  greetingTimeout: 10000,
-  socketTimeout: 10000,
-  // modern TLS
-  requireTLS: true,
-  tls: { minVersion: 'TLSv1.2' },
-  // enable logs while diagnosing (turn off after it works)
-  logger: true,
-  debug: true,
-});
-
-// (optional) verify once at boot so you immediately see if SMTP is reachable
-try {
-  await transporter.verify();
-  console.log('✉️  SMTP ready');
-} catch (err) {
-  console.error('✉️  SMTP verify failed:', err);
-}
-transporter.verify()
-  .then(() => console.log('✉️  SMTP ready'))
-  .catch(err => console.error('✉️  SMTP verify failed:', err));
+const sha256 = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
+const genCode = () => String(Math.floor(100000 + Math.random() * 900000));
+const signTempToken = (email) => jwt.sign({ email, kind: 'signup_otp' }, JWT_SECRET, { expiresIn: '10m' });
 
 const issueTokens = (user) => {
-  const accessToken = jwt.sign({ userId: user._id }, JWT_SECRET, { expiresIn: process.env.TOKEN_EXPIRES_IN || '15m' });
-  const refreshToken = jwt.sign({ userId: user._id }, JWT_REFRESH_SECRET, { expiresIn: process.env.REFRESH_EXPIRES_IN || '7d' });
+  const accessToken = jwt.sign(
+    { uid: user._id, r: user.role },
+    JWT_SECRET,
+    { expiresIn: process.env.TOKEN_EXPIRES_IN || '15m' }
+  );
+  const refreshToken = jwt.sign(
+    { uid: user._id },
+    JWT_REFRESH_SECRET,
+    { expiresIn: process.env.REFRESH_EXPIRES_IN || '7d' }
+  );
   return { accessToken, refreshToken };
 };
 
@@ -63,22 +42,7 @@ export const loginValidation = [
   body('password').notEmpty().withMessage('Password required'),
 ];
 
-const sha256 = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
-const genCode = () => String(Math.floor(100000 + Math.random() * 900000));
-const signTempToken = (email) => jwt.sign({ email, kind: 'signup_otp' }, JWT_SECRET, { expiresIn: '10m' });
-
-const getEmailFromTempToken = (tempToken) => {
-  try {
-    const payload = jwt.verify(tempToken, JWT_SECRET);
-    if (payload.kind !== 'signup_otp') return null;
-    return String(payload.email || '').toLowerCase();
-  } catch {
-    return null;
-  }
-};
-
-/* ====================== REGISTER (STAGED) ====================== */
-/** POST /api/auth/register */
+/* ====================== REGISTER (staged) ====================== */
 export const register = async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -113,52 +77,42 @@ export const register = async (req, res) => {
 
     const tempToken = signTempToken(email);
 
+    // generate & store OTP
     const code = genCode();
     await TempSignup.updateOne(
       { email },
       { $set: { otpHash: sha256(code), otpExpiresAt: new Date(Date.now() + 10 * 60 * 1000), otpAttempts: 0 } }
     );
 
-    // ✅ send the HTTP response first
+    // respond immediately
     res.status(201).json({
       otpRequired: true,
       tempToken,
       message: 'Please check your email for the verification code',
     });
 
-    // ✅ then fire-and-forget the email, and NEVER re-touch res here
-    const canSend = process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS;
-
-    // (optional) tiny helper so a stuck SMTP doesn’t tie the event loop
-    const withTimeout = (p, ms = 8000) =>
-      Promise.race([p, new Promise((_, r) => setTimeout(() => r(new Error('SMTP timeout')), ms))]);
-
+    // fire-and-forget email (never touch res after this)
     setImmediate(async () => {
-  try {
-    await transporter.sendMail({
-      from: process.env.MAIL_FROM || process.env.SMTP_USER,
-      to: email,
-      subject: 'Verify your account',
-      text: `Your verification code is ${code}. It expires in 10 minutes.`,
-      html: `<p>Your verification code is <b>${code}</b>. It expires in 10 minutes.</p>`,
+      try {
+        await sendEmail({
+          to: email,
+          subject: 'Verify your account',
+          text: `Your verification code is ${code}. It expires in 10 minutes.`,
+          html: `<p>Your verification code is <b>${code}</b>. It expires in 10 minutes.</p>`,
+        });
+      } catch (e) {
+        console.error('sendMail error (register):', e?.message || e);
+      }
     });
   } catch (e) {
-    console.error('sendMail error (register):', e);
-  }
-});
-  } catch (e) {
     console.error('register error:', e);
-    // only send an error if we have NOT sent a response yet
     if (!res.headersSent) {
       return res.status(500).json({ message: 'Registration failed' });
     }
   }
 };
 
-
-
 /* ====================== LOGIN ====================== */
-/** POST /api/auth/login */
 export const login = async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -168,31 +122,22 @@ export const login = async (req, res) => {
     const email = String(req.body.email || '').toLowerCase().trim();
     const password = String(req.body.password || '');
 
-    // Fast lookup: ensure email is indexed unique in your User schema
     const user = await User.findOne({ email })
       .select('_id name email role password avatarUrl organizationInfo reputation createdAt emailVerified')
       .lean();
-
     if (!user) return res.status(400).json({ message: 'Invalid credentials' });
 
     const ok = await bcrypt.compare(password, user.password);
     if (!ok) return res.status(400).json({ message: 'Invalid credentials' });
 
-    // Optional “auto-admin” rule (keep if you need it; done without an extra read)
     if (email === 'harsh.2201301022@geetauniversity.edu.in' && user.role !== 'admin') {
       await User.updateOne({ _id: user._id }, { $set: { role: 'admin' } });
       user.role = 'admin';
     }
 
-    // Small JWT payloads = faster sign & smaller headers
-    const accessToken = jwt.sign({ uid: user._id, r: user.role }, JWT_SECRET, {
-      expiresIn: process.env.TOKEN_EXPIRES_IN || '15m',
-    });
-    const refreshToken = jwt.sign({ uid: user._id }, JWT_REFRESH_SECRET, {
-      expiresIn: process.env.REFRESH_EXPIRES_IN || '7d',
-    });
-
+    const { accessToken, refreshToken } = issueTokens(user);
     const { password: _pw, ...safeUser } = user;
+
     return res.json({ user: { ...safeUser, id: safeUser._id }, accessToken, refreshToken });
   } catch (e) {
     console.error('login error:', e);
@@ -207,7 +152,8 @@ export const refresh = async (req, res) => {
     if (!refreshToken) return res.status(401).json({ message: 'Refresh token required' });
 
     const decoded = jwt.verify(refreshToken, JWT_REFRESH_SECRET);
-    const user = await User.findById(decoded.userId);
+    const userId = decoded.uid || decoded.userId; // accept either shape
+    const user = await User.findById(userId);
     if (!user) return res.status(401).json({ message: 'Invalid refresh token' });
 
     const { accessToken } = issueTokens(user);
@@ -241,7 +187,6 @@ export const updateProfile = async (req, res) => {
     const payload = {};
 
     if (typeof name === 'string' && name.trim()) payload.name = name.trim();
-
     const resolvedAvatar =
       (typeof avatarUrl === 'string' && avatarUrl.trim()) ||
       (typeof imageUrl === 'string' && imageUrl.trim()) ||
@@ -316,8 +261,7 @@ export const switchRole = async (req, res) => {
   }
 };
 
-/* ====================== OTP (TempSignup) ====================== */
-/** POST /api/auth/otp/send { tempToken } */
+/* ====================== OTP ====================== */
 export const sendOtp = async (req, res) => {
   try {
     const { tempToken } = req.body || {};
@@ -333,7 +277,6 @@ export const sendOtp = async (req, res) => {
     const t = await TempSignup.findOne({ email }).lean();
     if (!t) return res.status(400).json({ message: 'No staged signup found' });
 
-    // new code
     const code = genCode();
     await TempSignup.updateOne(
       { email },
@@ -343,20 +286,17 @@ export const sendOtp = async (req, res) => {
     // respond immediately
     res.status(202).json({ ok: true });
 
-    // send email in background
+    // send in background
     setImmediate(async () => {
       try {
-        await withTimeout(
-          transporter.sendMail({
-            from: process.env.MAIL_FROM || process.env.SMTP_USER,
-            to: email,
-            subject: 'Your verification code',
-            text: `Your code is ${code}. It expires in 10 minutes.`,
-            html: `<p>Your code is <b>${code}</b>. It expires in 10 minutes.</p>`,
-          })
-        );
+        await sendEmail({
+          to: email,
+          subject: 'Your verification code',
+          text: `Your code is ${code}. It expires in 10 minutes.`,
+          html: `<p>Your code is <b>${code}</b>. It expires in 10 minutes.</p>`,
+        });
       } catch (e) {
-        console.error('sendMail error (resend):', e);
+        console.error('sendMail error (sendOtp):', e?.message || e);
       }
     });
   } catch (e) {
@@ -365,10 +305,6 @@ export const sendOtp = async (req, res) => {
   }
 };
 
-
-
-
-/** POST /api/auth/otp/verify  body: { tempToken, code } */
 export const verifyOtp = async (req, res) => {
   try {
     const { tempToken, code } = req.body || {};
@@ -398,7 +334,6 @@ export const verifyOtp = async (req, res) => {
     await t.save();
     if (!ok) return res.status(400).json({ message: 'Invalid code' });
 
-    // Create real user NOW, with pre-hashed password injected
     const alreadyUser = await User.findOne({ email }).lean();
     if (alreadyUser) {
       await TempSignup.deleteOne({ email });
@@ -411,7 +346,7 @@ export const verifyOtp = async (req, res) => {
       email: t.email,
       role: t.role,
       password: t.passwordHash,      // already hashed
-      isPasswordHashed: true,        // tells pre-save hook to not re-hash
+      isPasswordHashed: true,        // your schema should skip re-hash
       emailVerified: true,
       phoneVerified: false,
     });

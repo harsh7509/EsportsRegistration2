@@ -9,7 +9,6 @@ import http from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import jwt from 'jsonwebtoken';
 
-// ==== Routes (adjust if your filenames differ)
 import tournamentsRoutes from './src/routes/tournaments.js';
 import authRoutes from './src/routes/auth.js';
 import scrimRoutes from './src/routes/scrims.js';
@@ -19,116 +18,66 @@ import adminRoutes from './src/routes/admin.js';
 import orgRoutes from './src/routes/Organizations.js';
 import promosRoutes from './src/routes/promos.js';
 
-// ==== Housekeeping imports
 import ensureRoomIndexes from './src/startup/ensureRoomIndexes.js';
 import Scrim from './src/models/Scrim.js';
 import Booking from './src/models/Booking.js';
 import Room from './src/models/Room.js';
 import Payment from './src/models/Payment.js';
 import Promotion from './src/models/Promotion.js';
+import { initMailer, sendEmail } from './src/utils/mailer.js';
 
 dotenv.config();
 
-
-
-
-// --- put these near the top (after imports, before app = express()) ---
-const FRONTEND_URL = process.env.FRONTEND_URL || 'https://arenapulse-orcin.vercel.app';
-const LOCAL_FRONTEND = 'http://localhost:5173';
+const FRONTEND_URL = (process.env.FRONTEND_URL || 'https://arenapulse-orcin.vercel.app').replace(/\/+$/, '');
 const ALLOWED_ORIGINS = [
-  FRONTEND_URL.replace(/\/+$/, ''),
-  LOCAL_FRONTEND,
+  FRONTEND_URL,
+  'http://localhost:5173',
   'https://thearenapulse.xyz',
   'https://www.thearenapulse.xyz',
-  // add more if you use other preview domains
 ];
 
-const corsOptions = {
-  origin(origin, cb) {
-    // allow non-browser tools (no Origin header)
-    if (!origin) return cb(null, true);
-    const clean = origin.replace(/\/+$/, '');
-    if (ALLOWED_ORIGINS.includes(clean)) return cb(null, true);
-    return cb(new Error(`Not allowed by CORS: ${origin}`));
-  },
-  credentials: true,
-  methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  optionsSuccessStatus: 204,
-  preflightContinue: false,
-};
-
-// --- after you create app ---
 const app = express();
+app.set('trust proxy', 1); // fixes express-rate-limit “unexpected X-Forwarded-For” warning
 
-
-// Ensure CORS headers are set on *all* responses (including errors)
-app.use((req, res, next) => {
-  const origin = (req.headers.origin || '').replace(/\/+$/, '');
-  if (ALLOWED_ORIGINS.includes(origin)) {
-    res.header('Access-Control-Allow-Origin', origin);
-    res.header('Access-Control-Allow-Credentials', 'true');
-    // Vary so caches don’t mix origins
-    res.header('Vary', 'Origin');
-  }
-  next();
-});
-
-// CORS + preflight before anything else
-app.use(cors(corsOptions));
-app.options('*', cors(corsOptions)); // handle OPTIONS early
-
-app.use(express.json());
-
-
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// if (process.env.NODE_ENV !== 'production') {
-//   allowed.push('http://localhost:5173');
-// }
-
-// === Env
-const PORT = process.env.PORT || 4000;
-const MONGO_URI = process.env.MONGO_URI;
-if (!MONGO_URI) {
-  console.error('❌ Missing MONGO_URI in env');
-  process.exit(1);
-}
-
-// Explicit allowlist (add your custom domain later if you move off the Vercel preview)
-// const ALLOWED_ORIGINS = [
-//   'http://localhost:5173',
-//   'https://arenapulse-orcin.vercel.app',
-  
-// ];
-
-// === CORS (set BEFORE routes)
+// Single CORS middleware (avoid dupes)
 app.use(cors({
   origin(origin, cb) {
-    if (!origin) return cb(null, true);                 // allow curl/postman
+    if (!origin) return cb(null, true); // allow curl/postman/same-origin
     const clean = origin.replace(/\/+$/, '');
     return ALLOWED_ORIGINS.includes(clean)
       ? cb(null, true)
       : cb(new Error(`Not allowed by CORS: ${origin}`));
   },
-  methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
-  allowedHeaders: ['Content-Type','Authorization','X-Requested-With'],
-  credentials: false,                                    // you don't use cookies
+  methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  credentials: true, // OK even if you don’t use cookies; lets browser send them if you add later
 }));
-// Fast preflight
-app.options('*', cors());
+app.options('*', cors()); // fast preflight
+
+// also mirror CORS headers on all responses (helps with some proxies/cached 4xx)
+app.use((req, res, next) => {
+  const origin = (req.headers.origin || '').replace(/\/+$/, '');
+  if (ALLOWED_ORIGINS.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+    res.header('Access-Control-Allow-Credentials', 'true');
+    res.header('Vary', 'Origin');
+  }
+  next();
+});
 
 app.use(express.json());
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Static (uploads)
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
 // Healthcheck
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
+app.get('/health', (_req, res) => res.status(200).send('ok'));
 
-// === API Routes
+// API routes
 app.use('/api/auth', authRoutes);
 app.use('/api/scrims', scrimRoutes);
 app.use('/api/upload', uploadRoutes);
@@ -138,16 +87,28 @@ app.use('/api/orgs', orgRoutes);
 app.use('/api/organizations', orgRoutes); // alias
 app.use('/api/promos', promosRoutes);
 app.use('/api/tournaments', tournamentsRoutes);
-app.get('/health', (req, res) => res.status(200).send('ok'));
-app.get('/api/health', (req, res) => res.status(200).json({ ok: true }));
 
+// Optional diagnostics: remove or protect later
+app.get('/api/diagnostics/mail', async (req, res) => {
+  try {
+    const to = process.env.TEST_EMAIL || process.env.MAIL_FROM || process.env.SMTP_USER;
+    if (!to) return res.status(400).json({ ok: false, error: 'Set TEST_EMAIL or MAIL_FROM' });
+    await sendEmail({
+      to,
+      subject: 'ArenaPulse mail test',
+      text: 'Diagnostic email from production.',
+      html: '<p>Diagnostic email from <b>production</b>.</p>',
+    });
+    res.json({ ok: true, to });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e?.message || String(e) });
+  }
+});
 
-// === Create HTTP server + Socket.IO
+// HTTP server + Socket.IO
 const server = http.createServer(app);
-
 const io = new SocketIOServer(server, {
   path: '/socket.io',
-  // Allow polling fallback so first connect works even if WS upgrade is flaky/cold start
   transports: ['websocket', 'polling'],
   pingInterval: 25000,
   pingTimeout: 20000,
@@ -155,41 +116,24 @@ const io = new SocketIOServer(server, {
     origin: ALLOWED_ORIGINS,
     methods: ['GET', 'POST'],
     allowedHeaders: ['Authorization'],
-    credentials: false, // set true only if using cookies cross-site
+    credentials: true,
   },
 });
 
-
-
-// If you have any HTTPS-enforce middleware, make sure it EXEMPTS /socket.io
-// Example (uncomment if you enforce https yourself):
-// app.use((req, res, next) => {
-//   const proto = req.get('x-forwarded-proto');
-//   if (proto && proto !== 'https' && !req.path.startsWith('/socket.io')) {
-//     return res.redirect('https://' + req.get('host') + req.originalUrl);
-//   }
-//   next();
-// });
-
-// Optional: JWT check on WS handshake (non-blocking)
 io.use((socket, next) => {
   try {
-    const raw =
-      socket.handshake.auth?.token ||
-      socket.handshake.headers?.authorization ||
-      '';
+    const raw = socket.handshake.auth?.token || socket.handshake.headers?.authorization || '';
     const token = raw?.startsWith('Bearer ') ? raw.slice(7) : raw;
     if (token) jwt.verify(token, process.env.JWT_SECRET);
     next();
   } catch (e) {
     console.warn('[socket] auth failed:', e?.message || e);
-    next(); // allow connect; change to next(new Error('auth failed')) to block
+    next(); // allow connect anyway
   }
 });
 
 io.on('connection', (socket) => {
   console.log('[socket] connected:', socket.id);
-
   socket.on('join-scrim', (scrimId) => {
     try {
       const room = 'scrim:' + String(scrimId);
@@ -199,25 +143,19 @@ io.on('connection', (socket) => {
       console.warn('join-scrim error:', e?.message || e);
     }
   });
-  
   socket.on('disconnect', (reason) => {
     console.log('[socket] disconnected:', socket.id, reason);
   });
-
 });
 
-// Share io with routes/controllers if needed
 app.set('io', io);
-app.set('trust proxy', 1);
 
-// === Cleanup job (purge scrims > 7 days after end; keep org ratings)
+// Cleanup job (unchanged)
 const CLEANUP_EVERY_HOURS = Number(process.env.CLEANUP_EVERY_HOURS || 24);
-
 async function purgeOldScrims() {
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000);
   const oldScrims = await Scrim.find({ 'timeSlot.end': { $lt: sevenDaysAgo } }).select('_id');
   if (!oldScrims.length) return;
-
   const ids = oldScrims.map((s) => s._id);
   await Promise.all([
     Booking.deleteMany({ scrimId: { $in: ids } }),
@@ -229,16 +167,23 @@ async function purgeOldScrims() {
   console.log(`🧹 Purged ${ids.length} old scrim(s) and related data`);
 }
 
+const PORT = process.env.PORT || 4000;
+const MONGO_URI = process.env.MONGO_URI;
+if (!MONGO_URI) {
+  console.error('❌ Missing MONGO_URI in env');
+  process.exit(1);
+}
+
 mongoose.connection.once('open', () => {
   purgeOldScrims().catch(console.error);
   setInterval(() => purgeOldScrims().catch(console.error), CLEANUP_EVERY_HOURS * 3600 * 1000);
 });
 
-// === Boot
 mongoose
   .connect(MONGO_URI)
-  .then(() => {
-    server.keepAliveTimeout = 65000; // avoid premature close behind proxies
+  .then(async () => {
+    await initMailer(); // init email provider early (logs if SMTP blocked)
+    server.keepAliveTimeout = 65000;
     server.headersTimeout = 70000;
     server.listen(PORT, () => {
       console.log(`✅ HTTP + Socket.IO on :${PORT}`);
