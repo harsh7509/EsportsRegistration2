@@ -11,13 +11,28 @@ import TempSignup from '../models/TempSignup.js';
 const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
 
-const transporter = nodemailer.createTransport({
+export const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: Number(process.env.SMTP_PORT || 587),
-  secure: Number(process.env.SMTP_PORT) === 465,
+  secure: Number(process.env.SMTP_PORT) === 465,   // false for 587
   auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-  pool: true, maxConnections: 5, maxMessages: 100, rateDelta: 1000, rateLimit: 5
+  pool: true,
+  maxConnections: 5,
+  maxMessages: 100,
+  // be nice to shared SMTP
+  rateDelta: 1000,
+  rateLimit: 5,
+  requireTLS: true,
+  tls: {
+    minVersion: 'TLSv1.2',
+    // ca: fs.readFileSync(...) // only if your SMTP needs custom CA
+  },
+  
+  // logger: true, // enable temporarily if you need to debug SMTP in prod
 });
+transporter.verify()
+  .then(() => console.log('✉️  SMTP ready'))
+  .catch(err => console.error('✉️  SMTP verify failed:', err));
 
 const issueTokens = (user) => {
   const accessToken = jwt.sign({ userId: user._id }, JWT_SECRET, { expiresIn: process.env.TOKEN_EXPIRES_IN || '15m' });
@@ -97,31 +112,41 @@ export const register = async (req, res) => {
     );
 
     // respond fast
-    res.status(201).json({
-      otpRequired: true,
-      tempToken,
-      message: 'Please check your email for the verification code',
-    });
+    res.status(201).json({ otpRequired: true, tempToken });
+setImmediate(async () => {
+  try {
+    await transporter.sendMail({ /* ... */ });
+  } catch (e) { console.error('sendMail error:', e); }
+});
+
+function withTimeout(promise, ms = 8000) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('SMTP timeout')), ms)),
+  ]);
+}
 
     // send email AFTER response (non-blocking)
     const canSend = process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS;
-    setImmediate(async () => {
-      try {
-        if (canSend) {
-          await transporter.sendMail({
-            from: process.env.MAIL_FROM || 'no-reply@example.com',
-            to: email,
-            subject: 'Verify your account',
-            text: `Your verification code is ${code}. It expires in 10 minutes.`,
-            html: `<p>Your verification code is <b>${code}</b>. It expires in 10 minutes.</p>`,
-          });
-        } else {
-          console.log('[DEV][OTP]', email, 'code =', code);
-        }
-      } catch (e) {
-        console.error('sendMail error (register):', e);
-      }
-    });
+    ssetImmediate(async () => {
+  try {
+    if (canSend) {
+      await withTimeout(
+        transporter.sendMail({
+          from: process.env.MAIL_FROM || process.env.SMTP_USER, // <- safer default
+          to: email,
+          subject: 'Verify your account',
+          text: `Your verification code is ${code}. It expires in 10 minutes.`,
+          html: `<p>Your verification code is <b>${code}</b>. It expires in 10 minutes.</p>`,
+        })
+      );
+    } else {
+      console.log('[DEV][OTP]', email, 'code =', code);
+    }
+  } catch (e) {
+    console.error('sendMail error (register):', e);
+  }
+});
   } catch (e) {
     console.error('register error:', e);
     return res.status(500).json({ message: 'Registration failed' });
@@ -289,17 +314,23 @@ export const switchRole = async (req, res) => {
 };
 
 /* ====================== OTP (TempSignup) ====================== */
-/** POST /api/auth/otp/send   body: { tempToken } */
-/** POST /api/auth/otp/send   body: { tempToken } */
+/** POST /api/auth/otp/send { tempToken } */
 export const sendOtp = async (req, res) => {
   try {
     const { tempToken } = req.body || {};
-    const email = getEmailFromTempToken(tempToken);
-    if (!email) return res.status(400).json({ message: 'Invalid token' });
+    if (!tempToken) return res.status(400).json({ message: 'Missing token' });
 
+    let payload;
+    try { payload = jwt.verify(tempToken, JWT_SECRET); }
+    catch { return res.status(401).json({ message: 'Temp token invalid/expired' }); }
+
+    if (payload.kind !== 'signup_otp') return res.status(400).json({ message: 'Invalid OTP purpose' });
+
+    const email = String(payload.email || '').toLowerCase();
     const t = await TempSignup.findOne({ email }).lean();
-    if (!t) return res.status(400).json({ message: 'No signup session for this token' });
+    if (!t) return res.status(400).json({ message: 'No staged signup found' });
 
+    // new code
     const code = genCode();
     await TempSignup.updateOne(
       { email },
@@ -309,18 +340,20 @@ export const sendOtp = async (req, res) => {
     // respond immediately
     res.status(202).json({ ok: true });
 
-    // send email AFTER responding
+    // send email in background
     setImmediate(async () => {
       try {
-        await transporter.sendMail({
-          from: process.env.MAIL_FROM || 'no-reply@example.com',
-          to: email,
-          subject: 'Your verification code',
-          text: `Your code is ${code}. It expires in 10 minutes.`,
-          html: `<p>Your code is <b>${code}</b>. It expires in 10 minutes.</p>`,
-        });
+        await withTimeout(
+          transporter.sendMail({
+            from: process.env.MAIL_FROM || process.env.SMTP_USER,
+            to: email,
+            subject: 'Your verification code',
+            text: `Your code is ${code}. It expires in 10 minutes.`,
+            html: `<p>Your code is <b>${code}</b>. It expires in 10 minutes.</p>`,
+          })
+        );
       } catch (e) {
-        console.error('sendMail error (sendOtp):', e);
+        console.error('sendMail error (resend):', e);
       }
     });
   } catch (e) {
@@ -328,6 +361,7 @@ export const sendOtp = async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 };
+
 
 
 

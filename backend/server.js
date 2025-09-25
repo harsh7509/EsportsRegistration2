@@ -103,21 +103,20 @@ if (!MONGO_URI) {
 // ];
 
 // === CORS (set BEFORE routes)
-app.use(
-  cors({
-    origin(origin, cb) {
-      if (!origin) return cb(null, true); // Allow curl/postman/same-origin
-      if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
-      return cb(new Error(`CORS blocked for origin: ${origin}`));
-    },
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-    credentials: false, // keep false unless you truly send cross-site cookies
-  })
-);
-
+app.use(cors({
+  origin(origin, cb) {
+    if (!origin) return cb(null, true);                 // allow curl/postman
+    const clean = origin.replace(/\/+$/, '');
+    return ALLOWED_ORIGINS.includes(clean)
+      ? cb(null, true)
+      : cb(new Error(`Not allowed by CORS: ${origin}`));
+  },
+  methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
+  allowedHeaders: ['Content-Type','Authorization','X-Requested-With'],
+  credentials: false,                                    // you don't use cookies
+}));
 // Fast preflight
-app.options('*', (_req, res) => res.sendStatus(204));
+app.options('*', cors());
 
 app.use(express.json());
 
