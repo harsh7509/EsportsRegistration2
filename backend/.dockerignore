@@ -1,6 +1,8 @@
 node_modules
 npm-debug.log*
 .git
+Dockerfile
+.dockerignore
 .env
-.vscode
-coverage
+.env.*
+*.md

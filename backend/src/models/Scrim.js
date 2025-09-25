@@ -11,6 +11,18 @@ const ParticipantsMetaSchema = new mongoose.Schema(
   { _id: false }
 );
 
+
+const kickRequestSchema = new mongoose.Schema({
+  requester: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }, // जिसने रिक्वेस्ट भेजी (player)
+  slotNumber: { type: Number, required: true },
+  targetName: { type: String, required: true },     // किस प्लेयर को kick करना है (display name/IGN)
+  reason: { type: String },
+  status: { type: String, enum: ['pending','approved','rejected'], default: 'pending' },
+  orgNote: { type: String },
+  resolvedAt: { type: Date }
+}, { timestamps: true });
+
+
 const scrimSchema = new mongoose.Schema(
   {
     title: { type: String, required: true },
@@ -29,6 +41,7 @@ const scrimSchema = new mongoose.Schema(
 
     participants: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     participantsMeta: [ParticipantsMetaSchema],
+    kickRequests: [kickRequestSchema],
 
     entryFee: { type: Number, default: 0 },
     prizePool: { type: Number, default: 0 },
@@ -74,6 +87,11 @@ scrimSchema.pre('validate', function(next) {
   }
   next();
 });
+
+
+
+
+
 
 scrimSchema.index({ createdBy: 1 });
 scrimSchema.index({ 'timeSlot.start': 1 });

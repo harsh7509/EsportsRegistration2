@@ -167,6 +167,20 @@ export const scrimsAPI = {
   processPayment: (id, data) => api.post(`/scrims/${id}/payment`, data),
   rateScrim: (id, data) => api.post(`/scrims/${id}/rate`, data),
   getParticipantDetails: (id) => api.get(`/scrims/${id}/participants`),
+  addKickRequest(scrimId, payload) {
+    // payload = { slotNumber: Number, targetName: String, reason?: String }
+    return api.post(`/scrims/${scrimId}/kick-requests`, payload);
+  },
+
+  listKickRequests(scrimId, params) {
+    return api.get(`/scrims/${scrimId}/kick-requests`, { params }); // e.g. { status: 'pending' }
+  },
+
+  resolveKickRequest(scrimId, reqId, data) {
+    // data = { action: 'approve' | 'reject', orgNote?: String }
+    return api.patch(`/scrims/${scrimId}/kick-requests/${reqId}/resolve`, data);
+  },
+
 };
 
 export const promosAPI = {

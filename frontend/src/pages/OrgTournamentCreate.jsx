@@ -192,7 +192,7 @@ const OrgTournamentCreate = () => {
       });
 
       toast.success('Tournament created');
-      navigate('/dashboard');
+      navigate('/tournaments');
       
     } catch (err) {
       console.error(err);

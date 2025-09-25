@@ -584,7 +584,7 @@ export const sendRoomMessage = async (req, res) => {
     if (!room) return res.status(404).json({ message: 'Room not found' });
 
     // Only the org owner can send messages (adjust if players can chat too)
-    const isOwner = scrim.createdBy.toString() === userId.toString();
+    const isOwner = String(scrim.createdBy) === String(userId);
     if (!isOwner) return res.status(403).json({ message: 'Only organization owner can send messages' });
 
     const allowedTypes = ['text', 'image', 'credentials', 'system'];
@@ -600,21 +600,32 @@ export const sendRoomMessage = async (req, res) => {
       content,
       type,
       timestamp: new Date(),
+      ...(type === 'image' ? { imageUrl } : {}),
     };
-    if (type === 'image') message.imageUrl = imageUrl;
 
     room.messages.push(message);
     await room.save();
 
-    // Optionally populate sender for immediate echo
+    // Populate sender so clients can render immediately
     await room.populate('messages.senderId', 'name role');
+    const last = room.messages[room.messages.length - 1];
 
-    return res.json({ message: room.messages[room.messages.length - 1] });
+    // 🔔 Broadcast to everyone in this scrim room
+    const io = req.app.get('io');
+    if (io) {
+      io.to('scrim:' + scrimId).emit('room:message', {
+        scrimId,
+        message: last,
+      });
+    }
+
+    return res.status(201).json({ message: last });
   } catch (error) {
     console.error('Send message error:', error);
     res.status(500).json({ message: 'Server error sending message' });
   }
 };
+
 
 // ---------- Get Room Messages ----------
 export const getRoomMessages = async (req, res) => {

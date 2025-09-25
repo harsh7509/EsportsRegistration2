@@ -1,12 +1,17 @@
 import React, { useEffect, useState } from 'react';
-import { Users, MessageSquare, Edit, Trash2, Send, Image as ImageIcon, X } from 'lucide-react';
+import {
+  Users, MessageSquare, Edit, Trash2, Send, Image as ImageIcon, X,
+  AlertTriangle, ClipboardList, Check, XCircle
+} from 'lucide-react';
 import { scrimsAPI, uploadAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { useSocket } from '../context/SocketContext'; // ⬅️ NEW
 import { NormalizeImageUrl } from '../utils/img.js';
 import toast from 'react-hot-toast';
 
 const ScrimManagement = ({ scrim, onScrimUpdate }) => {
   const { user } = useAuth();
+  const { socket } = useSocket() || {};
 
   const [participants, setParticipants] = useState(scrim.participants || []);
   const [roomMessages, setRoomMessages] = useState([]);
@@ -24,11 +29,101 @@ const ScrimManagement = ({ scrim, onScrimUpdate }) => {
     room: { id: scrim?.room?.id || '', password: '' },
   });
 
+  // 🔴 Kick Requests state
+  const [kickOpen, setKickOpen] = useState(false);
+  const [kickRequests, setKickRequests] = useState([]);
+  const [krLoading, setKrLoading] = useState(false);
+  const [actionBusy, setActionBusy] = useState(null); // reqId currently resolving
+  const [orgNotes, setOrgNotes] = useState({}); // { [reqId]: string }
+
+  const pendingCount = kickRequests.filter(r => r.status === 'pending').length;
+
   useEffect(() => {
     fetchParticipantDetails();
     fetchRoomMessages();
+    fetchKickRequests();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+ 
+  // 🔔 socket: realtime room chat (append messages as they arrive)
+useEffect(() => {
+  if (!socket || !scrim?._id) return;
+  const roomId = scrim._id;
+
+  socket.emit('join-scrim', roomId);
+
+  const onRoomMessage = (evt) => {
+    if (evt?.scrimId !== roomId) return;
+    setRoomMessages((prev) => [...prev, evt.message]);
+  };
+
+  socket.on('room:message', onRoomMessage);
+
+  return () => {
+    socket.off('room:message', onRoomMessage);
+  };
+}, [socket, scrim?._id]);
+
+// 🔔 socket: kick requests (new / update)
+useEffect(() => {
+  if (!socket || !scrim?._id) return;
+  const roomId = scrim._id;
+
+   const join = () => socket.emit('join-scrim', roomId);
+  join();                  // initial mount
+  socket.on('connect', join); 
+
+  const onNew = (evt) => {
+    if (evt?.scrimId !== roomId) return;
+    setKickRequests((prev) => [evt.request, ...prev]);
+  };
+
+  const onUpdate = (evt) => {
+    if (evt?.scrimId !== roomId) return;
+    setKickRequests((prev) =>
+      prev.map((r) => (r._id === evt.request._id ? evt.request : r))
+    );
+  };
+
+  socket.on('kickRequest:new', onNew);
+  socket.on('kickRequest:update', onUpdate);
+
+  return () => {
+    socket.off('kickRequest:new', onNew);
+    socket.off('kickRequest:update', onUpdate);
+  };
+}, [socket, scrim?._id]);
+
+  const fetchKickRequests = async () => {
+    try {
+      setKrLoading(true);
+      const res = await scrimsAPI.listKickRequests(scrim._id);
+      setKickRequests(res?.data || []);
+    } catch (err) {
+      console.error('Failed to fetch kick requests:', err);
+    } finally {
+      setKrLoading(false);
+    }
+  };
+
+  const handleResolve = async (reqId, action) => {
+    try {
+      setActionBusy(reqId);
+      const note = (orgNotes[reqId] || '').trim();
+      await scrimsAPI.resolveKickRequest(scrim._id, reqId, { action, orgNote: note });
+      // optimism: update UI locally
+      setKickRequests(prev =>
+        prev.map(r => (r._id === reqId ? { ...r, status: action === 'approve' ? 'approved' : 'rejected', orgNote: note, resolvedAt: new Date().toISOString() } : r))
+      );
+      toast.success(action === 'approve' ? 'Approved' : 'Rejected');
+    } catch (err) {
+      console.error('resolve error', err);
+      toast.error(err?.response?.data?.message || 'Action failed');
+    } finally {
+      setActionBusy(null);
+    }
+  };
 
   const fetchParticipantDetails = async () => {
     try {
@@ -93,12 +188,15 @@ const ScrimManagement = ({ scrim, onScrimUpdate }) => {
         ? { content: text, type: 'image', imageUrl: uploadedUrl }
         : { content: text, type: 'text' };
 
-      await scrimsAPI.sendRoomMessage(scrim._id, payload);
-      setNewMessage('');
-      setSelectedFile(null);
-      setUploadedUrl('');
-      await fetchRoomMessages();
-      toast.success('Message sent');
+      const res = await scrimsAPI.sendRoomMessage(scrim._id, payload);
+     setNewMessage('');
+     setSelectedFile(null);
+     setUploadedUrl('');
+     // optional optimistic update
+     if (res?.data?.message) {
+       setRoomMessages((prev) => [...prev, res.data.message]);
+     }
+     toast.success('Message sent');
     } catch (err) {
       console.error('Send message error:', err);
       toast.error('Failed to send message');
@@ -144,10 +242,28 @@ const ScrimManagement = ({ scrim, onScrimUpdate }) => {
         <h2 className="text-2xl font-bold bg-gradient-to-r from-white to-white/60 bg-clip-text text-transparent">
           Manage Scrim
         </h2>
-        <button onClick={() => setShowEditModal(true)} className="btn-primary">
-          <Edit className="h-4 w-4 mr-2" />
-          Edit Scrim
-        </button>
+
+        <div className="flex items-center gap-2">
+          {/* 🔴 Kick Requests indicator button */}
+          <button
+            onClick={() => setKickOpen(true)}
+            className={[
+              'inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
+              pendingCount
+                ? 'bg-red-500/15 text-red-300 border-red-500/30 hover:bg-red-500/20'
+                : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/20'
+            ].join(' ')}
+            title={pendingCount ? 'Pending kick requests' : 'No kick requests'}
+          >
+            <ClipboardList className="h-4 w-4" />
+            {pendingCount ? `Kick Requests • ${pendingCount}` : 'Kick Requests • OK'}
+          </button>
+
+          <button onClick={() => setShowEditModal(true)} className="btn-primary">
+            <Edit className="h-4 w-4 mr-2" />
+            Edit Scrim
+          </button>
+        </div>
       </div>
 
       {/* Participants */}
@@ -394,6 +510,100 @@ const ScrimManagement = ({ scrim, onScrimUpdate }) => {
                 <button type="submit" className="flex-1 btn-primary">Update Scrim</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* 🔴 Kick Requests Modal */}
+      {kickOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-4">
+          <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl max-w-2xl w-full p-6 shadow-[0_10px_40px_rgba(0,0,0,0.55)]">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-red-300" />
+                Kick Requests
+              </h3>
+              <button onClick={() => setKickOpen(false)} className="text-gray-400 hover:text-white">×</button>
+            </div>
+
+            <div className="mb-3 text-sm text-gray-400">
+              {krLoading ? 'Loading…' : pendingCount
+                ? `${pendingCount} pending request(s)`
+                : 'No pending requests'}
+            </div>
+
+            <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+              {kickRequests.length ? kickRequests.map(req => (
+                <div key={req._id} className="rounded-xl border border-white/10 bg-white/5 p-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm">
+                      <div className="font-medium text-white">
+                        Slot #{req.slotNumber} — <span className="text-gaming-cyan">{req.targetName}</span>
+                      </div>
+                      <div className="text-xs text-gray-400 mt-0.5">
+                        Requested by: {req?.requester?.name || 'Player'} • {new Date(req.createdAt).toLocaleString()}
+                      </div>
+                    </div>
+                    <span className={[
+                      'px-2 py-1 rounded-full text-[11px] border',
+                      req.status === 'pending' ? 'bg-yellow-500/15 text-yellow-300 border-yellow-500/30'
+                        : req.status === 'approved' ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                        : 'bg-rose-500/15 text-rose-300 border-rose-500/30'
+                    ].join(' ')}>{req.status}</span>
+                  </div>
+
+                  {req.reason && (
+                    <div className="mt-2 text-sm text-gray-200">
+                      <span className="text-gray-400">Reason:</span> {req.reason}
+                    </div>
+                  )}
+
+                  {req.status === 'pending' ? (
+                    <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-2">
+                      <input
+                        type="text"
+                        placeholder="Note (optional)"
+                        className="md:col-span-2 input bg-white/5 border-white/10 text-sm"
+                        value={orgNotes[req._id] || ''}
+                        onChange={(e) => setOrgNotes(s => ({ ...s, [req._id]: e.target.value }))}
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleResolve(req._id, 'approve')}
+                          disabled={actionBusy === req._id}
+                          className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 text-sm disabled:opacity-60"
+                        >
+                          <Check className="h-4 w-4" /> Approve
+                        </button>
+                        <button
+                          onClick={() => handleResolve(req._id, 'reject')}
+                          disabled={actionBusy === req._id}
+                          className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white px-3 py-2 text-sm disabled:opacity-60"
+                        >
+                          <XCircle className="h-4 w-4" /> Reject
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-2 text-xs text-gray-400">
+                      Resolved {req.resolvedAt ? `on ${new Date(req.resolvedAt).toLocaleString()}` : ''} {req.orgNote ? `• Note: ${req.orgNote}` : ''}
+                    </div>
+                  )}
+                </div>
+              )) : (
+                <div className="text-center text-gray-400">No kick requests yet</div>
+              )}
+            </div>
+
+            <div className="mt-4 flex items-center justify-between">
+              <button
+                onClick={() => fetchKickRequests()}
+                className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white hover:bg-white/10"
+              >
+                Refresh
+              </button>
+              <button onClick={() => setKickOpen(false)} className="btn-primary">Close</button>
+            </div>
           </div>
         </div>
       )}

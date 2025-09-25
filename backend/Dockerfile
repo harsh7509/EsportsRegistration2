@@ -1,18 +1,22 @@
-# 1) Build
-FROM node:20-slim AS build
+# syntax=docker/dockerfile:1
+FROM node:20-alpine AS deps
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci --omit=dev
-COPY . .
-# no build step for pure Node API; if you transpile TypeScript, run it here
 
-# 2) Runtime
-FROM node:20-slim
-ENV NODE_ENV=production
+FROM node:20-alpine AS runner
 WORKDIR /app
-COPY --from=build /app /app
-# non-root user is good practice (optional)
-# RUN useradd -ms /bin/bash nodeuser
-# USER nodeuser
+ENV NODE_ENV=production
+# If you emit logs to stdout/stderr:
+ENV PORT=4000
+
+# Copy node_modules from deps stage
+COPY --from=deps /app/node_modules ./node_modules
+# Copy app source
+COPY . .
+
+# Optional: healthcheck for local/ecs
+HEALTHCHECK --interval=30s --timeout=3s --start-period=20s CMD wget -qO- http://127.0.0.1:4000/api/health || exit 1
+
 EXPOSE 4000
 CMD ["node", "server.js"]

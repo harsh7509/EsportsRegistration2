@@ -186,9 +186,21 @@ io.use((socket, next) => {
 
 io.on('connection', (socket) => {
   console.log('[socket] connected:', socket.id);
+
+  socket.on('join-scrim', (scrimId) => {
+    try {
+      const room = 'scrim:' + String(scrimId);
+      socket.join(room);
+      console.log(`[socket] ${socket.id} joined ${room}`);
+    } catch (e) {
+      console.warn('join-scrim error:', e?.message || e);
+    }
+  });
+  
   socket.on('disconnect', (reason) => {
     console.log('[socket] disconnected:', socket.id, reason);
   });
+
 });
 
 // Share io with routes/controllers if needed
