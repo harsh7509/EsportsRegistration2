@@ -384,4 +384,20 @@ export const verifyOtp = async (req, res) => {
   }
 };
 
+export const testMail = async (req, res) => {
+  const to = (req.body?.to || process.env.TEST_EMAIL || process.env.SMTP_USER || '').trim();
+  if (!to) return res.status(400).json({ ok: false, error: 'Provide "to" in body or set TEST_EMAIL' });
 
+  try {
+    await sendEmail({
+      to,
+      from: process.env.MAIL_FROM || process.env.RESEND_FROM || process.env.SMTP_USER,
+      subject: 'ArenaPulse test email',
+      text: 'If you received this, HTTPS email works from your server.',
+      html: '<b>If you received this, HTTPS email works from your server.</b>',
+    });
+    res.json({ ok: true, to });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e?.message || String(e) });
+  }
+};

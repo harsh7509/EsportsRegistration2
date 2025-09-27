@@ -38,6 +38,7 @@ const ALLOWED_ORIGINS = [
 
 const app = express();
 app.set('trust proxy', 1); // fixes express-rate-limit “unexpected X-Forwarded-For” warning
+initMailer().catch(() => {});
 
 // Single CORS middleware (avoid dupes)
 app.use(cors({

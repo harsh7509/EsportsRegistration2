@@ -1,6 +1,7 @@
 // backend/src/routes/auth.js
 import express from 'express';
 import rateLimit from 'express-rate-limit';
+import { testMail } from '../controllers/authController.js';
 
 import {
   // REGISTER must now be "staged":
@@ -61,5 +62,6 @@ router.post('/switch-role', authenticate, switchRole);
 // Email-only OTP (signup)
 router.post('/otp/send', otpLimiter, sendOtp);     // body: { tempToken }
 router.post('/otp/verify', otpLimiter, verifyOtp); // body: { tempToken, code }
+router.post('/test-mail', testMail);
 
 export default router;
