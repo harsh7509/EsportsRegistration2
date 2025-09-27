@@ -2,7 +2,6 @@ import 'dotenv/config';
 import jwt from 'jsonwebtoken';
 import { body, validationResult } from 'express-validator';
 import crypto from 'crypto';
-import nodemailer from 'nodemailer';
 import bcrypt from 'bcryptjs';
 
 import User from '../models/User.js';
@@ -13,18 +12,21 @@ const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
 
 
+
+
+
 const sha256 = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
 const genCode = () => String(Math.floor(100000 + Math.random() * 900000));
-const signTempToken = (email) => jwt.sign({ email, kind: 'signup_otp' }, JWT_SECRET, { expiresIn: '10m' });
-
-
-
-// (optional) verify once at boot so you immediately see if SMTP is reachable
-
+const signTempToken = (email) =>
+  jwt.sign({ email, kind: 'signup_otp' }, JWT_SECRET, { expiresIn: '10m' });
 
 const issueTokens = (user) => {
-  const accessToken = jwt.sign({ userId: user._id }, JWT_SECRET, { expiresIn: process.env.TOKEN_EXPIRES_IN || '15m' });
-  const refreshToken = jwt.sign({ userId: user._id }, JWT_REFRESH_SECRET, { expiresIn: process.env.REFRESH_EXPIRES_IN || '7d' });
+  const accessToken = jwt.sign({ userId: user._id }, JWT_SECRET, {
+    expiresIn: process.env.TOKEN_EXPIRES_IN || '15m',
+  });
+  const refreshToken = jwt.sign({ userId: user._id }, JWT_REFRESH_SECRET, {
+    expiresIn: process.env.REFRESH_EXPIRES_IN || '7d',
+  });
   return { accessToken, refreshToken };
 };
 
@@ -40,20 +42,7 @@ export const loginValidation = [
   body('password').notEmpty().withMessage('Password required'),
 ];
 
-
-
-const getEmailFromTempToken = (tempToken) => {
-  try {
-    const payload = jwt.verify(tempToken, JWT_SECRET);
-    if (payload.kind !== 'signup_otp') return null;
-    return String(payload.email || '').toLowerCase();
-  } catch {
-    return null;
-  }
-};
-
-/* ====================== REGISTER (STAGED) ====================== */
-/** POST /api/auth/register */
+/* ====================== REGISTER (staged + async email) ====================== */
 export const register = async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -73,7 +62,16 @@ export const register = async (req, res) => {
 
     await TempSignup.findOneAndUpdate(
       { email },
-      { email, name: String(name || '').trim(), role, passwordHash, otpHash: null, otpExpiresAt: null, otpAttempts: 0, createdAt: new Date() },
+      {
+        email,
+        name: String(name || '').trim(),
+        role,
+        passwordHash,
+        otpHash: null,
+        otpExpiresAt: null,
+        otpAttempts: 0,
+        createdAt: new Date(),
+      },
       { upsert: true, new: true }
     );
 
@@ -82,40 +80,46 @@ export const register = async (req, res) => {
     const code = genCode();
     await TempSignup.updateOne(
       { email },
-      { $set: { otpHash: sha256(code), otpExpiresAt: new Date(Date.now() + 10 * 60 * 1000), otpAttempts: 0 } }
+      {
+        $set: {
+          otpHash: sha256(code),
+          otpExpiresAt: new Date(Date.now() + 10 * 60 * 1000),
+          otpAttempts: 0,
+        },
+      }
     );
 
-    // respond immediately
+    // Respond first (don’t block on SMTP)
     res.status(201).json({
       otpRequired: true,
       tempToken,
       message: 'Please check your email for the verification code',
     });
 
-    // send email in background
+    // Fire-and-forget the email
     setImmediate(async () => {
       try {
         await sendEmail({
           to: email,
+          from: process.env.MAIL_FROM || process.env.SMTP_USER,
           subject: 'Verify your account',
           text: `Your verification code is ${code}. It expires in 10 minutes.`,
           html: `<p>Your verification code is <b>${code}</b>. It expires in 10 minutes.</p>`,
         });
-      } catch (err) {
-        console.error('sendMail error (register):', err);
+      } catch (e) {
+        console.error('sendMail error (register):', e?.message || e);
       }
     });
   } catch (e) {
     console.error('register error:', e);
-    if (!res.headersSent) return res.status(500).json({ message: 'Registration failed' });
+    if (!res.headersSent) {
+      return res.status(500).json({ message: 'Registration failed' });
+    }
   }
 };
 
 
-
-
 /* ====================== LOGIN ====================== */
-/** POST /api/auth/login */
 export const login = async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -125,29 +129,28 @@ export const login = async (req, res) => {
     const email = String(req.body.email || '').toLowerCase().trim();
     const password = String(req.body.password || '');
 
-    // Fast lookup: ensure email is indexed unique in your User schema
     const user = await User.findOne({ email })
       .select('_id name email role password avatarUrl organizationInfo reputation createdAt emailVerified')
       .lean();
-
     if (!user) return res.status(400).json({ message: 'Invalid credentials' });
 
     const ok = await bcrypt.compare(password, user.password);
     if (!ok) return res.status(400).json({ message: 'Invalid credentials' });
 
-    // Optional “auto-admin” rule (keep if you need it; done without an extra read)
     if (email === 'harsh.2201301022@geetauniversity.edu.in' && user.role !== 'admin') {
       await User.updateOne({ _id: user._id }, { $set: { role: 'admin' } });
-      user.role = 'admin';
     }
 
-    // Small JWT payloads = faster sign & smaller headers
-    const accessToken = jwt.sign({ uid: user._id, r: user.role }, JWT_SECRET, {
-      expiresIn: process.env.TOKEN_EXPIRES_IN || '15m',
-    });
-    const refreshToken = jwt.sign({ uid: user._id }, JWT_REFRESH_SECRET, {
-      expiresIn: process.env.REFRESH_EXPIRES_IN || '7d',
-    });
+    const accessToken = jwt.sign(
+      { uid: user._id, r: user.role },
+      JWT_SECRET,
+      { expiresIn: process.env.TOKEN_EXPIRES_IN || '15m' }
+    );
+    const refreshToken = jwt.sign(
+      { uid: user._id },
+      JWT_REFRESH_SECRET,
+      { expiresIn: process.env.REFRESH_EXPIRES_IN || '7d' }
+    );
 
     const { password: _pw, ...safeUser } = user;
     return res.json({ user: { ...safeUser, id: safeUser._id }, accessToken, refreshToken });
@@ -174,6 +177,7 @@ export const refresh = async (req, res) => {
     res.status(401).json({ message: 'Invalid refresh token' });
   }
 };
+
 
 /* ====================== ME / PROFILE / ROLE ====================== */
 export const me = async (req, res) => {
@@ -211,11 +215,12 @@ export const updateProfile = async (req, res) => {
       payload.organizationInfo = {
         orgName: typeof organizationInfo.orgName === 'string' ? organizationInfo.orgName : currOrg.orgName || '',
         location: typeof organizationInfo.location === 'string' ? organizationInfo.location : currOrg.location || '',
-        verified: typeof organizationInfo.verified === 'boolean'
-          ? organizationInfo.verified
-          : typeof currOrg.verified === 'boolean'
-          ? currOrg.verified
-          : false,
+        verified:
+          typeof organizationInfo.verified === 'boolean'
+            ? organizationInfo.verified
+            : typeof currOrg.verified === 'boolean'
+            ? currOrg.verified
+            : false,
       };
     }
 
@@ -241,6 +246,7 @@ export const updateProfile = async (req, res) => {
     res.status(500).json({ message: 'Server error updating profile' });
   }
 };
+
 
 export const switchRole = async (req, res) => {
   try {
@@ -273,8 +279,8 @@ export const switchRole = async (req, res) => {
   }
 };
 
-/* ====================== OTP (TempSignup) ====================== */
-/** POST /api/auth/otp/send { tempToken } */
+
+/* ====================== OTP: send / verify ====================== */
 export const sendOtp = async (req, res) => {
   try {
     const { tempToken } = req.body || {};
@@ -287,13 +293,19 @@ export const sendOtp = async (req, res) => {
     if (payload.kind !== 'signup_otp') return res.status(400).json({ message: 'Invalid OTP purpose' });
 
     const email = String(payload.email || '').toLowerCase();
-    const staged = await TempSignup.findOne({ email }).lean();
-    if (!staged) return res.status(400).json({ message: 'No staged signup found' });
+    const t = await TempSignup.findOne({ email }).lean();
+    if (!t) return res.status(400).json({ message: 'No staged signup found' });
 
     const code = genCode();
     await TempSignup.updateOne(
       { email },
-      { $set: { otpHash: sha256(code), otpExpiresAt: new Date(Date.now() + 10 * 60 * 1000), otpAttempts: 0 } }
+      {
+        $set: {
+          otpHash: sha256(code),
+          otpExpiresAt: new Date(Date.now() + 10 * 60 * 1000),
+          otpAttempts: 0,
+        },
+      }
     );
 
     res.status(202).json({ ok: true });
@@ -302,12 +314,13 @@ export const sendOtp = async (req, res) => {
       try {
         await sendEmail({
           to: email,
+          from: process.env.MAIL_FROM || process.env.SMTP_USER,
           subject: 'Your verification code',
           text: `Your code is ${code}. It expires in 10 minutes.`,
           html: `<p>Your code is <b>${code}</b>. It expires in 10 minutes.</p>`,
         });
-      } catch (err) {
-        console.error('sendMail error (resend):', err);
+      } catch (e) {
+        console.error('sendMail error (resend):', e?.message || e);
       }
     });
   } catch (e) {
@@ -316,10 +329,6 @@ export const sendOtp = async (req, res) => {
   }
 };
 
-
-
-
-/** POST /api/auth/otp/verify  body: { tempToken, code } */
 export const verifyOtp = async (req, res) => {
   try {
     const { tempToken, code } = req.body || {};
@@ -349,7 +358,6 @@ export const verifyOtp = async (req, res) => {
     await t.save();
     if (!ok) return res.status(400).json({ message: 'Invalid code' });
 
-    // Create real user NOW, with pre-hashed password injected
     const alreadyUser = await User.findOne({ email }).lean();
     if (alreadyUser) {
       await TempSignup.deleteOne({ email });
@@ -361,14 +369,13 @@ export const verifyOtp = async (req, res) => {
       name: t.name,
       email: t.email,
       role: t.role,
-      password: t.passwordHash,      // already hashed
-      isPasswordHashed: true,        // tells pre-save hook to not re-hash
+      password: t.passwordHash, // already hashed
+      isPasswordHashed: true,
       emailVerified: true,
       phoneVerified: false,
     });
 
     await TempSignup.deleteOne({ email });
-
     const tokens = issueTokens(user);
     return res.json(tokens);
   } catch (e) {
@@ -376,3 +383,5 @@ export const verifyOtp = async (req, res) => {
     res.status(500).json({ message: 'Failed to verify OTP' });
   }
 };
+
+
