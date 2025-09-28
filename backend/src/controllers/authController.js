@@ -145,13 +145,13 @@ export const login = async (req, res) => {
       await User.updateOne({ _id: user._id }, { $set: { role: 'admin' } });
     }
 
-    const accessToken = jwt.sign(
-      { uid: user._id, r: user.role },
+   const accessToken = jwt.sign(
+      { userId: user._id, role: user.role },
       JWT_SECRET,
       { expiresIn: process.env.TOKEN_EXPIRES_IN || '15m' }
     );
     const refreshToken = jwt.sign(
-      { uid: user._id },
+      { userId: user._id },
       JWT_REFRESH_SECRET,
       { expiresIn: process.env.REFRESH_EXPIRES_IN || '7d' }
     );
@@ -171,7 +171,8 @@ export const refresh = async (req, res) => {
     if (!refreshToken) return res.status(401).json({ message: 'Refresh token required' });
 
     const decoded = jwt.verify(refreshToken, JWT_REFRESH_SECRET);
-    const user = await User.findById(decoded.userId);
+    const id = decoded.userId || decoded.uid; // backward compat
+    const user = await User.findById(id);
     if (!user) return res.status(401).json({ message: 'Invalid refresh token' });
 
     const { accessToken } = issueTokens(user);
