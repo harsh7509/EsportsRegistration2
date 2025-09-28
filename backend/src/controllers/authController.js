@@ -104,9 +104,13 @@ export const register = async (req, res) => {
           from: process.env.MAIL_FROM || process.env.SMTP_USER,
           subject: 'Verify your account',
           text: `Your verification code is ${code}. It expires in 10 minutes.`,
-          html: `<p>Your verification code is <b>${code}</b>. It expires in 10 minutes.</p>`,
-        });
+          html: `<p>Your verification code is <b>${code}</b>. It expires in 10 minutes.</p>`,          
+        }
+    );
+      await TempSignup.updateOne({ email }, { $set: { lastEmailAt: new Date(), lastEmailError: null } });
+
       } catch (e) {
+        await TempSignup.updateOne({ email }, { $set: { lastEmailAt: new Date(), lastEmailError: String(e?.message || e) } });
         console.error('sendMail error (register):', e?.message || e);
       }
     });
@@ -318,9 +322,12 @@ export const sendOtp = async (req, res) => {
           subject: 'Your verification code',
           text: `Your code is ${code}. It expires in 10 minutes.`,
           html: `<p>Your code is <b>${code}</b>. It expires in 10 minutes.</p>`,
+          
         });
+        await TempSignup.updateOne({ email }, { $set: { lastEmailAt: new Date(), lastEmailError: null } });
       } catch (e) {
         console.error('sendMail error (resend):', e?.message || e);
+        await TempSignup.updateOne({ email }, { $set: { lastEmailAt: new Date(), lastEmailError: String(e?.message || e) } });
       }
     });
   } catch (e) {

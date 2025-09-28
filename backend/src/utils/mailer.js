@@ -102,9 +102,9 @@ async function sendWithSMTP({ to, subject, text, html, from }) {
 /* ---- Public helper; tries HTTPS providers first, then SMTP ---- */
 export async function sendEmail({ to, subject, text, html, from }) {
   const steps = [
-    () => sendWithResend({ to, subject, text, html, from }),
-    () => sendWithSendGrid({ to, subject, text, html, from }),
-    () => sendWithSMTP({ to, subject, text, html, from }),
+    async () => { const ok = await sendWithResend({ to, subject, text, html, from }); if (ok) { console.log('[mailer] sent via Resend →', to); } return ok; },
+    async () => { const ok = await sendWithSendGrid({ to, subject, text, html, from }); if (ok) { console.log('[mailer] sent via SendGrid →', to); } return ok; },
+    async () => { const ok = await sendWithSMTP({ to, subject, text, html, from }); if (ok) { console.log('[mailer] sent via SMTP →', to); } return ok; },
   ];
 
   let lastErr;
@@ -128,6 +128,10 @@ export async function initMailer() {
       `SENDGRID=${process.env.SENDGRID_API_KEY ? 'yes' : 'no'},`,
       `SMTP=${process.env.SMTP_HOST && process.env.SMTP_USER ? 'yes' : 'no'}`
     );
+
+    if (!process.env.RESEND_API_KEY && !process.env.SENDGRID_API_KEY && !(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS)) {
+      console.warn('⚠️  No email provider configured! Set RESEND_API_KEY or SENDGRID_API_KEY (recommended) or SMTP_* for local.');
+    }
 
     if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
       const t = getSmtpTransport();

@@ -123,7 +123,7 @@ const Signup = () => {
         setTempToken(res.data.tempToken);
         setOtpStep(true);
         setCooldown(20); // start resend timer
-        sendEmailOtp(); 
+        
         toast.success('We sent a verification code to your email.');
         return;
       }
