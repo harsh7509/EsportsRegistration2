@@ -4,9 +4,6 @@ import rateLimit from 'express-rate-limit';
 import { testMail } from '../controllers/authController.js';
 
 import {
-  // REGISTER must now be "staged":
-  // - create TempSignup + email OTP + return { otpRequired, tempToken }
-  // - DO NOT create User here
   register,
   login,
   refresh,
@@ -15,9 +12,6 @@ import {
   me,
   updateProfile,
   switchRole,
-  // Email OTP handlers for staged signup:
-  // - sendOtp({ tempToken })
-  // - verifyOtp({ tempToken, code }) -> create User, delete TempSignup, return tokens
   sendOtp,
   verifyOtp,
 } from '../controllers/authController.js';
@@ -26,7 +20,6 @@ import { authenticate } from '../middlewares/auth.js';
 
 const router = express.Router();
 
-/* ---------- light rate limits (optional but recommended) ---------- */
 
 // avoid signup/OTP abuse
 const registerLimiter = rateLimit({
@@ -43,9 +36,7 @@ const otpLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-/* ------------------------------ routes ------------------------------ */
 
-// STAGED REGISTER: controller must store in TempSignup, not User
 router.post('/register', registerLimiter, registerValidation, register);
 
 // Normal auth
