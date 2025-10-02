@@ -59,8 +59,6 @@ router.post('/:id/rate', authenticate, roleGuard(['player']), rateScrim);
 router.get('/:id/participants', authenticate, roleGuard(['organization']), getParticipantDetails);
 
 
-
-
 // Payment processing
 router.post('/:id/payment', authenticate, roleGuard(['player']), processPayment);
 
