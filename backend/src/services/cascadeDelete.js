@@ -77,15 +77,15 @@ const pullUserEverywhere = async (userId, session) => {
   if (Scrim) {
     // If your Scrim has participants array:
     await Scrim.updateMany(
-      { 'participants.userId': uid },
-      { $pull: { participants: { userId: uid } } },
-      { runValidators: false }
-    ).session(session ?? null);
+      { participants: uid },
+   { $pull: { participants: uid, participantsMeta: { playerId: uid } } },
+   { runValidators: false }
+ ).session(session ?? null);
   }
 
-  if (Booking) await Booking.deleteMany({ userId: uid }).session(session ?? null);
-  if (Payment) await Payment.deleteMany({ userId: uid }).session(session ?? null);
-  if (OrgRating) await OrgRating.deleteMany({ userId: uid }).session(session ?? null);
+  if (Booking) await Booking.deleteMany({ playerId: uid }).session(session ?? null);
+ if (Payment) await Payment.deleteMany({ playerId: uid }).session(session ?? null);
+ if (OrgRating) await OrgRating.deleteMany({ playerId: uid }).session(session ?? null);
 };
 
 // ---------- PUBLIC API ----------
@@ -127,7 +127,7 @@ export const deleteUserCascade = async (userId, session) => {
     }
   }
   if (Scrim) {
-    const ss = await Scrim.find({ organizationId: uid }).select('_id').session(session ?? null);
+    const ss = await Scrim.find({ createdBy: uid }).select('_id')
     for (const s of ss) {
       await deleteScrimCascade(s._id, session);
     }

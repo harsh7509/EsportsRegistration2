@@ -24,6 +24,9 @@
     "concurrently": "^8.2.2"
   },
   "dependencies": {
+    "and": "^0.0.3",
+    "auth": "^1.2.3",
+    "gh": "^2.8.9",
     "react-hot-toast": "^2.6.0"
   }
 }

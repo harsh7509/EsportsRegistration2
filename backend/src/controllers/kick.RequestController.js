@@ -4,9 +4,8 @@ import Scrim from '../models/Scrim.js';
 
 // Small helpers
 const isParticipant = (scrim, userId) =>
-  scrim.participants?.some(p =>
-    String(p.user ?? p.player ?? p.playerId ?? p._id) === String(userId)
-  );
+  Array.isArray(scrim.participants) &&
+  scrim.participants.some(p => String(p) === String(userId));
 
 const isOrgOrOwner = (scrim, user) => {
   if (!user) return false;
