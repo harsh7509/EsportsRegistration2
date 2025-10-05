@@ -21,6 +21,7 @@ const Navbar = lazy(() => import("./components/Navbar"));
 const ProtectedRoute = lazy(() => import("./components/ProtectedRoute"));
 const RoleGuard = lazy(() => import("./components/RoleGuard"));
 
+
 const Landing = lazy(() => import("./pages/Landing"));
 const Login = lazy(() => import("./pages/Login"));
 const Signup = lazy(() => import("./pages/Signup"));
