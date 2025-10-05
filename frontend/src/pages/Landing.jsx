@@ -12,10 +12,19 @@ import {
   BarChart3,
   Sparkles,
 } from "lucide-react";
-import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import PromoCarousel from "../components/PromoCarousel";
 import ScrimCard from "../components/ScrimCard";
 import { scrimsAPI } from "../services/api";
+import SEO from "../components/SEO"
 
 /**
  * Landing.jsx — Pro Hub visual language, without 3D
@@ -48,7 +57,8 @@ const isTodayInIST = (dateObj) => {
   const nowIST = new Date(new Date().toLocaleString("en-US", { timeZone: TZ }));
   const dIST = new Date(dateObj.toLocaleString("en-US", { timeZone: TZ }));
   const pad = (n) => String(n).padStart(2, "0");
-  const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const ymd = (d) =>
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   return ymd(nowIST) === ymd(dIST);
 };
 
@@ -99,7 +109,10 @@ const LiveTicker = ({ items = [] }) => (
       transition={{ duration: 18, repeat: Infinity, ease: "linear" }}
     >
       {items.concat(items).map((s, i) => (
-        <div key={i} className="inline-flex items-center gap-2 text-sm text-white/90">
+        <div
+          key={i}
+          className="inline-flex items-center gap-2 text-sm text-white/90"
+        >
           <Activity className="h-4 w-4 text-emerald-300" />
           <span className="font-medium">{s?.game || "Game"}</span>
           <span className="opacity-70">|</span>
@@ -120,10 +133,36 @@ const getFee = (s) => {
 };
 
 const feeBuckets = [
-  { key: "free",       label: "Free Scrims (₹0)",        icon: Sparkles, test: (s) => getFee(s) === 0 },
-  { key: "starter",    label: "Starter Scrims(₹25)", icon: Trophy,   test: (s) => { const f = getFee(s); return f >= 1  && f <= 25; } },
-  { key: "challenger", label: "Challenger Scrims (₹50)", icon: Crown, test: (s) => { const f = getFee(s); return f >= 26 && f <= 50; } },
-  { key: "premium",    label: "Premium Scrims ",   icon: Crown,    test: (s) => getFee(s) >= 51 },
+  {
+    key: "free",
+    label: "Free Scrims (₹0)",
+    icon: Sparkles,
+    test: (s) => getFee(s) === 0,
+  },
+  {
+    key: "starter",
+    label: "Starter Scrims(₹25)",
+    icon: Trophy,
+    test: (s) => {
+      const f = getFee(s);
+      return f >= 1 && f <= 25;
+    },
+  },
+  {
+    key: "challenger",
+    label: "Challenger Scrims (₹50)",
+    icon: Crown,
+    test: (s) => {
+      const f = getFee(s);
+      return f >= 26 && f <= 50;
+    },
+  },
+  {
+    key: "premium",
+    label: "Premium Scrims ",
+    icon: Crown,
+    test: (s) => getFee(s) >= 51,
+  },
 ];
 
 /* -------------------- chart data -------------------- */
@@ -195,9 +234,28 @@ const Landing = () => {
   // Chart can reflect overall activity
   const chartData = useMemo(() => mkChartData(allScrims), [allScrims]);
 
-  return (
+  return (<>
+      <SEO
+        title="ArenaPulse – Centralized Esports Platform for Scrims & Tournaments"
+        description="ArenaPulse is the ultimate esports hub where players and organizations create, host, and join scrims and tournaments. Access multiple orgs, manage matches, and compete — all without Discord or WhatsApp."
+        keywords="thearenapulse, esports platform, tournaments, scrims, gaming events, ArenaPulse, esports hub, online competitions, host scrims, join tournaments"
+        canonical="https://thearenapulse.xyz/"
+        schema={{
+          "@context": "https://schema.org",
+          "@type": "WebSite",
+          name: "ArenaPulse",
+          url: "https://thearenapulse.xyz/",
+          description:
+            "A centralized esports platform for hosting and joining scrims and tournaments.",
+          potentialAction: {
+            "@type": "SearchAction",
+            target: "https://thearenapulse.xyz/search?q={search_term_string}",
+            "query-input": "required name=search_term_string",
+          },
+        }}
+      />
     <div className="min-h-screen bg-[#0b0b12] text-white">
-      {/* ===== HERO (no 3D) ===== */}
+
       <section className="relative overflow-hidden">
         {/* glow orbs */}
         <div className="pointer-events-none absolute -top-24 -left-24 h-[32rem] w-[32rem] rounded-full bg-gradient-to-br from-fuchsia-500/30 via-violet-500/20 to-cyan-400/20 blur-3xl" />
@@ -218,14 +276,16 @@ const Landing = () => {
               The Pro Hub
             </motion.h1>
             <p className="mt-4 max-w-xl text-white/80">
-              Your mission control for competitive gaming — live matches, analytics, rankings, and community. Built for pros.
+              Your mission control for competitive gaming — live matches,
+              analytics, rankings, and community. Built for pros.
             </p>
             <div className="mt-7 flex flex-col gap-3 sm:flex-row">
               <Link
                 to="/signup"
                 className="group inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-6 py-3 text-lg font-semibold text-gray-900 transition hover:bg-white/90 focus-visible:ring-2 focus-visible:ring-white/70"
               >
-                Start Competing <ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-0.5" />
+                Start Competing{" "}
+                <ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-0.5" />
               </Link>
               <Link
                 to="/scrims"
@@ -237,7 +297,11 @@ const Landing = () => {
 
             {/* quick stats */}
             <div className="mt-8 grid gap-4 sm:grid-cols-3">
-              <StatPill icon={Gamepad2} label="Today's Scrims" value={todayScrims.length || "—"} />
+              <StatPill
+                icon={Gamepad2}
+                label="Today's Scrims"
+                value={todayScrims.length || "—"}
+              />
               <StatPill icon={Users} label="Community" value="10k+ players" />
               <StatPill icon={Trophy} label="Events Hosted" value="1.2k+" />
             </div>
@@ -251,15 +315,21 @@ const Landing = () => {
                   <div className="mb-3 flex items-center gap-2 text-sm text-white/70">
                     <Trophy className="h-4 w-4" /> Featured Tournament
                   </div>
-                  <p className="text-white/90">Champions Circuit — Qualifiers</p>
-                  <p className="mt-1 text-sm text-white/60">Starts 7 PM IST • ₹50K Prize Pool</p>
+                  <p className="text-white/90">
+                    Champions Circuit — Qualifiers
+                  </p>
+                  <p className="mt-1 text-sm text-white/60">
+                    Starts 7 PM IST • ₹50K Prize Pool
+                  </p>
                 </div>
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
                   <div className="mb-3 flex items-center gap-2 text-sm text-white/70">
                     <Calendar className="h-4 w-4" /> Your Next Match
                   </div>
                   <p className="text-white/90">Valorant — Ascent</p>
-                  <p className="mt-1 text-sm text-white/60">Tomorrow • Slot #12</p>
+                  <p className="mt-1 text-sm text-white/60">
+                    Tomorrow • Slot #12
+                  </p>
                 </div>
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-5 md:col-span-2">
                   <div className="mb-3 flex items-center gap-2 text-sm text-white/70">
@@ -267,18 +337,62 @@ const Landing = () => {
                   </div>
                   <div className="h-36">
                     <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                      <AreaChart
+                        data={chartData}
+                        margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+                      >
                         <defs>
-                          <linearGradient id="gradL" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor="#22d3ee" stopOpacity={0.9} />
-                            <stop offset="100%" stopColor="#a78bfa" stopOpacity={0.1} />
+                          <linearGradient
+                            id="gradL"
+                            x1="0"
+                            y1="0"
+                            x2="0"
+                            y2="1"
+                          >
+                            <stop
+                              offset="0%"
+                              stopColor="#22d3ee"
+                              stopOpacity={0.9}
+                            />
+                            <stop
+                              offset="100%"
+                              stopColor="#a78bfa"
+                              stopOpacity={0.1}
+                            />
                           </linearGradient>
                         </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#ffffff14" />
-                        <XAxis dataKey="idx" stroke="#9ca3af" fontSize={12} tickLine={false} axisLine={false} />
-                        <YAxis stroke="#9ca3af" fontSize={12} width={28} tickLine={false} axisLine={false} />
-                        <Tooltip contentStyle={{ background: "#0f172a", border: "1px solid #334155", color: "#e5e7eb" }} />
-                        <Area type="monotone" dataKey="rank" stroke="#22d3ee" fill="url(#gradL)" strokeWidth={2} />
+                        <CartesianGrid
+                          strokeDasharray="3 3"
+                          stroke="#ffffff14"
+                        />
+                        <XAxis
+                          dataKey="idx"
+                          stroke="#9ca3af"
+                          fontSize={12}
+                          tickLine={false}
+                          axisLine={false}
+                        />
+                        <YAxis
+                          stroke="#9ca3af"
+                          fontSize={12}
+                          width={28}
+                          tickLine={false}
+                          axisLine={false}
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            background: "#0f172a",
+                            border: "1px solid #334155",
+                            color: "#e5e7eb",
+                          }}
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="rank"
+                          stroke="#22d3ee"
+                          fill="url(#gradL)"
+                          strokeWidth={2}
+                        />
                       </AreaChart>
                     </ResponsiveContainer>
                   </div>
@@ -314,7 +428,11 @@ const Landing = () => {
       {/* Browse by Entry Fee (today only) */}
       <section className="bg-[#0b0b12] py-14">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <SectionHeader title="Browse by Entry Fee (Today)" cta="View All" to="/scrims" />
+          <SectionHeader
+            title="Browse by Entry Fee (Today)"
+            cta="View All"
+            to="/scrims"
+          />
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {buckets.map(({ key, label, count, icon: Icon }) => (
               <div
@@ -363,7 +481,11 @@ const Landing = () => {
       {/* Top Ranked (NO date filter) */}
       <section className="bg-[#0e0e17] py-14">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <SectionHeader title="Top Ranked Scrims" cta="View All" to="/scrims" />
+          <SectionHeader
+            title="Top Ranked Scrims"
+            cta="View All"
+            to="/scrims"
+          />
           {error && (
             <div className="mb-6 rounded-xl border border-red-400/30 bg-red-500/10 p-4 text-red-200">
               {error}
@@ -414,7 +536,9 @@ const Landing = () => {
       <footer className="border-t border-white/10 bg-[#0e0e17] py-10">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col items-center justify-between gap-4 sm:flex-row">
-            <p className="text-white/60">© {new Date().getFullYear()} Arena Pulse. All rights reserved.</p>
+            <p className="text-white/60">
+              © {new Date().getFullYear()} Arena Pulse. All rights reserved.
+            </p>
             <div className="flex items-center gap-4 text-white/70">
               <Link to="/terms" className="transition hover:text-white">
                 Terms
@@ -432,6 +556,7 @@ const Landing = () => {
         </div>
       </footer>
     </div>
+    </>
   );
 };
 
