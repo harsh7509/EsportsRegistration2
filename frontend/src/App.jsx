@@ -41,7 +41,6 @@ function App() {
   return (
     <HelmetProvider>
       <div className="min-h-screen bg-gaming-dark text-white">
-
         <Suspense fallback={<Fallback label="Loading navbar…" />}>
           <ErrorBoundary>
             <Navbar />
