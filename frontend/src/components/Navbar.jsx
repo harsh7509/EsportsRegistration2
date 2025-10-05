@@ -61,7 +61,7 @@ const Navbar = () => {
         <div className="flex justify-between items-center h-16">
           {/* Logo */}
           <Link to="/" className="group flex items-center space-x-2">
-            <img src='/logo2.png' className='h-16'/>
+            <img src='/logo2.png' className='h-16' alt='ArenaPulse Logo' title='ArenaPulse Logo'/>
           </Link>
 
           {/* Desktop Nav */}
@@ -111,6 +111,7 @@ const Navbar = () => {
                       src={NormalizeImageUrl(user.avatarUrl)}
                       alt={user.name}
                       className="w-8 h-8 rounded-full object-cover ring-2 ring-gray-700"
+                      title={user.name}
                     />
                   ) : (
                     <div className="w-8 h-8 bg-gaming-purple rounded-full grid place-items-center text-white font-bold">
