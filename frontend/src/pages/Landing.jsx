@@ -26,22 +26,10 @@ import ScrimCard from "../components/ScrimCard";
 import { scrimsAPI } from "../services/api";
 import SEO from "../components/SEO"
 
-/**
- * Landing.jsx — Pro Hub visual language, without 3D
- * - Animated gradient hero (no 3D)
- * - Live ticker (today only)
- * - Browse by entry fee buckets (today only)
- * - Top ranked scrims (NO date filter)
- * - Compact analytics panel
- * - Community preview
- */
 
-/* -------------------- helpers: dates (IST) -------------------- */
 const TZ = "Asia/Kolkata";
 const asDate = (v) => (v ? new Date(v) : null);
 
-
-// try common field names safely
 const getStartDate = (s) =>
   asDate(
     s?.startTime ??
