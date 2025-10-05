@@ -1,67 +1,62 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/logo.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-    <title>ArenaPulse: Create & Join Esports Scrims & Tournaments</title>
-    <meta name="description" content="ArenaPulse is the ultimate platform for esports organizations and players. Easily create, manage, and compete in scrims and tournaments. Find your next match today!">
-    <meta name="keywords" content="esports, scrims, tournaments, esports registration, tournament management, find scrims, create tournament, gaming community, ArenaPulse, competitive gaming">
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+  <link rel="manifest" href="/site.webmanifest">
+  <title>ArenaPulse: Create & Join Esports Scrims & Tournaments</title>
 
-    <link rel="canonical" href="https://thearenapulse.xyz/">
-
-    <meta property="og:type" content="website">
-    <meta property="og:url" content="https://thearenapulse.xyz/">
-    <meta property="og:title" content="ArenaPulse: Create & Join Esports Scrims & Tournaments">
-    <meta property="og:description" content="The ultimate platform for esports organizations and players to manage and compete in scrims and tournaments.">
-    <meta property="og:image" content="https://thearenapulse.xyz/social-share-image.png">
-
-    <meta name="twitter:card" content="summary_large_image">
-    <meta property="twitter:url" content="https://thearenapulse.xyz/">
-    <meta name="twitter:title" content="ArenaPulse: Create & Join Esports Scrims & Tournaments">
-    <meta name="twitter:description" content="The ultimate platform for esports organizations and players to manage and compete in scrims and tournaments.">
-    <meta property="twitter:image" content="https://thearenapulse.xyz/social-share-image.png">
-
-    <script type="application/ld+json">
-    {
-      "@context": "https://schema.org",
-      "@type": "WebSite",
-      "name": "ArenaPulse",
-      "url": "https://thearenapulse.xyz/"
+  <style>
+    #__global_error__ {
+      position: fixed;
+      inset: auto 8px 8px 8px;
+      background: #111827;
+      color: #fca5a5;
+      border: 1px solid #374151;
+      padding: 12px;
+      border-radius: 8px;
+      font: 12px/1.4 monospace;
+      max-height: 40vh;
+      overflow: auto;
+      z-index: 999999;
+      display: none;
     }
-    </script>
 
-    <style>
-      #__global_error__ {
-        position: fixed; inset: auto 8px 8px 8px; 
-        background:#111827; color:#fca5a5; border:1px solid #374151;
-        padding:12px; border-radius:8px; font: 12px/1.4 monospace; 
-        max-height: 40vh; overflow:auto; z-index: 999999; display:none;
+    #__global_error__ b {
+      color: #f87171
+    }
+
+    #__global_error__.show {
+      display: block
+    }
+  </style>
+  <script>
+    (function () {
+      const box = document.createElement('div');
+      box.id = '__global_error__';
+      box.innerHTML = '<b>Runtime error</b><pre id="__global_error_pre__"></pre>';
+      document.addEventListener('DOMContentLoaded', () => document.body.appendChild(box));
+      function show(err) {
+        const pre = document.getElementById('__global_error_pre__');
+        if (!pre) return;
+        pre.textContent = (err && (err.stack || err.message || String(err))) || 'Unknown error';
+        box.classList.add('show');
+        console.error('[GlobalError]', err);
       }
-      #__global_error__ b { color:#f87171 }
-      #__global_error__.show { display:block }
-    </style>
-    <script>
-      (function(){
-        const box = document.createElement('div');
-        box.id = '__global_error__';
-        box.innerHTML = '<b>Runtime error</b><pre id="__global_error_pre__"></pre>';
-        document.addEventListener('DOMContentLoaded',()=>document.body.appendChild(box));
-        function show(err){
-          const pre = document.getElementById('__global_error_pre__');
-          if(!pre) return;
-          pre.textContent = (err && (err.stack || err.message || String(err))) || 'Unknown error';
-          box.classList.add('show');
-          console.error('[GlobalError]', err);
-        }
-        window.addEventListener('error', e => show(e.error || e.message));
-        window.addEventListener('unhandledrejection', e => show(e.reason || e));
-      })();
-    </script>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
+      window.addEventListener('error', e => show(e.error || e.message));
+      window.addEventListener('unhandledrejection', e => show(e.reason || e));
+    })();
+  </script>
+</head>
+
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.jsx"></script>
+</body>
+
 </html>
