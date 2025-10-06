@@ -3,7 +3,7 @@ import { Router } from "express";
 import authRoutes from "./authRoutes.js";
 import scrimRoutes from "./scrimRoutes.js";
 import tournamentsRoutes from "./tournamentsRoutes.js";
-import profileRoutes from "./profileRoutes.js";
+import profileRoutes from "./ProfileRoutes.js";
 import adminRoutes from "./adminRoutes.js";
 import orgRoutes from "./orgRoutes.js";
 import promosRoutes from "./promosRoutes.js";
