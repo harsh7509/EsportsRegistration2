@@ -15,6 +15,7 @@ import {
 import toast from "react-hot-toast";
 import { organizationsAPI } from "../services/api";
 import { useAuth } from "../context/AuthContext";
+import SEO from "../components/SEO"
 
 /**
  * VerifyOrg — polished UI w/ verified lock
@@ -78,8 +79,9 @@ export default function VerifyOrg() {
 
   const aadhaarDigits = aadhaar.replace(/\D/g, "").slice(0, 12);
   const aadhaarValid = /^\d{12}$/.test(aadhaarDigits);
-  const aadhaarPretty = aadhaarDigits.replace(/(\d{4})(\d{0,4})(\d{0,4})/, (_, a, b, c) =>
-    [a, b, c].filter(Boolean).join(" ")
+  const aadhaarPretty = aadhaarDigits.replace(
+    /(\d{4})(\d{0,4})(\d{0,4})/,
+    (_, a, b, c) => [a, b, c].filter(Boolean).join(" ")
   );
 
   const stepCount = useMemo(() => {
@@ -105,7 +107,17 @@ export default function VerifyOrg() {
       consent;
     // Disable if already verified OR pending review
     return Boolean(all) && !isApproved && !isPending;
-  }, [legalName, email, dob, aadhaarValid, aadhaarImage, selfieImage, consent, isApproved, isPending]);
+  }, [
+    legalName,
+    email,
+    dob,
+    aadhaarValid,
+    aadhaarImage,
+    selfieImage,
+    consent,
+    isApproved,
+    isPending,
+  ]);
 
   const validate = () => {
     const next = {};
@@ -166,263 +178,292 @@ export default function VerifyOrg() {
   const formDisabled = isApproved || isPending;
 
   return (
-    <Page>
-      {/* Header */}
-      <div className="flex items-center gap-3 mb-6">
-        <button
-          onClick={() => navigate(-1)}
-          className="p-2 rounded-lg bg-gray-800/80 hover:bg-gray-700 border border-gray-700"
-          title="Back"
-        >
-          <ArrowLeft className="w-5 h-5" />
-        </button>
-        <div className="flex items-center gap-3">
-          <h1 className="text-2xl md:text-3xl font-bold">Verify your organization</h1>
-          {isApproved && (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/15 text-emerald-300 border border-emerald-700/40">
-              <ShieldCheck className="w-4 h-4" />
-              Verified
-            </span>
-          )}
-        </div>
-      </div>
+    <>
+      <SEO
+        title="Verify Your Esports Organization | ArenaPulse"
+        description="Submit your KYC and verification details to become a verified organizer on ArenaPulse. Gain credibility and access to hosting tools."
+        keywords="verify organization, esports verification, organizer KYC"
+        canonical="https://thearenapulse.xyz/org/verify"
+      />
 
-      {/* Success ribbon when verified */}
-      {isApproved && (
-        <div className="mb-6 rounded-2xl border border-emerald-700/40 bg-emerald-500/10 p-4">
-          <div className="flex items-start gap-3 text-emerald-200">
-            <div className="p-2 rounded-xl bg-emerald-500/20 border border-emerald-500/30">
-              <ShieldCheck className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="font-semibold">You’re verified 🎉</div>
-              <div className="text-sm opacity-90">
-                Your organizer tools are fully unlocked. The form below is now read-only.
+      <Page>
+        {/* Header */}
+        <div className="flex items-center gap-3 mb-6">
+          <button
+            onClick={() => navigate(-1)}
+            className="p-2 rounded-lg bg-gray-800/80 hover:bg-gray-700 border border-gray-700"
+            title="Back"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl md:text-3xl font-bold">
+              Verify your organization
+            </h1>
+            {isApproved && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/15 text-emerald-300 border border-emerald-700/40">
+                <ShieldCheck className="w-4 h-4" />
+                Verified
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Success ribbon when verified */}
+        {isApproved && (
+          <div className="mb-6 rounded-2xl border border-emerald-700/40 bg-emerald-500/10 p-4">
+            <div className="flex items-start gap-3 text-emerald-200">
+              <div className="p-2 rounded-xl bg-emerald-500/20 border border-emerald-500/30">
+                <ShieldCheck className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="font-semibold">You’re verified 🎉</div>
+                <div className="text-sm opacity-90">
+                  Your organizer tools are fully unlocked. The form below is now
+                  read-only.
+                </div>
               </div>
             </div>
           </div>
+        )}
+
+        {/* Status strip */}
+        <StatusStrip status={status} verified={verified} />
+
+        {/* Progress */}
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-sm text-gray-400">Completion</div>
+            <div className="text-sm text-gray-300">{progress}%</div>
+          </div>
+          <div className="h-2 rounded-full bg-gray-800 overflow-hidden">
+            <div
+              className={`h-full transition-[width] duration-300 ${
+                isApproved
+                  ? "bg-gradient-to-r from-emerald-400 to-emerald-600"
+                  : "bg-gradient-to-r from-gaming-purple to-gaming-cyan"
+              }`}
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <StepChip done={!!legalName}>Owner name</StepChip>
+            <StepChip done={!!email}>Email</StepChip>
+            <StepChip done={!!dob}>DOB</StepChip>
+            <StepChip done={aadhaarValid}>Aadhaar</StepChip>
+            <StepChip done={!!aadhaarImage}>Aadhaar photo</StepChip>
+            <StepChip done={!!selfieImage}>Selfie</StepChip>
+            <StepChip done={!!consent}>Consent</StepChip>
+          </div>
         </div>
-      )}
 
-      {/* Status strip */}
-      <StatusStrip status={status} verified={verified} />
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left column: form */}
+          <div className="lg:col-span-2">
+            <Card>
+              <form
+                onSubmit={onSubmit}
+                className={`space-y-6 ${formDisabled ? "opacity-80" : ""}`}
+              >
+                <SectionHeader icon={<ShieldCheck className="w-5 h-5" />}>
+                  Organization owner details
+                </SectionHeader>
 
-      {/* Progress */}
-      <div className="mb-6">
-        <div className="flex items-center justify-between mb-2">
-          <div className="text-sm text-gray-400">Completion</div>
-          <div className="text-sm text-gray-300">{progress}%</div>
-        </div>
-        <div className="h-2 rounded-full bg-gray-800 overflow-hidden">
-          <div
-            className={`h-full transition-[width] duration-300 ${
-              isApproved
-                ? "bg-gradient-to-r from-emerald-400 to-emerald-600"
-                : "bg-gradient-to-r from-gaming-purple to-gaming-cyan"
-            }`}
-            style={{ width: `${progress}%` }}
-          />
-        </div>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <StepChip done={!!legalName}>Owner name</StepChip>
-          <StepChip done={!!email}>Email</StepChip>
-          <StepChip done={!!dob}>DOB</StepChip>
-          <StepChip done={aadhaarValid}>Aadhaar</StepChip>
-          <StepChip done={!!aadhaarImage}>Aadhaar photo</StepChip>
-          <StepChip done={!!selfieImage}>Selfie</StepChip>
-          <StepChip done={!!consent}>Consent</StepChip>
-        </div>
-      </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <TextInput
+                    label="Legal name"
+                    placeholder="Full name as per ID"
+                    value={legalName}
+                    onChange={(v) => {
+                      setLegalName(v);
+                      setErrors((e) => ({ ...e, legalName: undefined }));
+                    }}
+                    required
+                    error={errors.legalName}
+                    disabled={formDisabled}
+                  />
+                  <TextInput
+                    label="Email"
+                    type="email"
+                    placeholder="owner@org.com"
+                    value={email}
+                    onChange={(v) => {
+                      setEmail(v);
+                      setErrors((e) => ({ ...e, email: undefined }));
+                    }}
+                    required
+                    error={errors.email}
+                    disabled={formDisabled}
+                  />
+                  <TextInput
+                    label="Date of birth"
+                    type="date"
+                    value={dob}
+                    onChange={(v) => {
+                      setDob(v);
+                      setErrors((e) => ({ ...e, dob: undefined }));
+                    }}
+                    required
+                    error={errors.dob}
+                    disabled={formDisabled}
+                  />
+                  <TextInput
+                    label="Aadhaar number"
+                    placeholder="XXXX XXXX XXXX"
+                    value={aadhaarPretty}
+                    onChange={(v) => {
+                      const digits = v.replace(/\D/g, "").slice(0, 12);
+                      setAadhaar(digits);
+                      setErrors((e) => ({ ...e, aadhaar: undefined }));
+                    }}
+                    inputMode="numeric"
+                    maxLength={14}
+                    hint={aadhaarValid ? "Looks good." : "12 digits required."}
+                    status={aadhaarValid ? "ok" : "warn"}
+                    required
+                    error={errors.aadhaar}
+                    disabled={formDisabled}
+                  />
+                </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left column: form */}
-        <div className="lg:col-span-2">
-          <Card>
-            <form onSubmit={onSubmit} className={`space-y-6 ${formDisabled ? "opacity-80" : ""}`}>
-              <SectionHeader icon={<ShieldCheck className="w-5 h-5" />}>
-                Organization owner details
-              </SectionHeader>
+                <Divider />
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <TextInput
-                  label="Legal name"
-                  placeholder="Full name as per ID"
-                  value={legalName}
-                  onChange={(v) => {
-                    setLegalName(v);
-                    setErrors((e) => ({ ...e, legalName: undefined }));
-                  }}
-                  required
-                  error={errors.legalName}
-                  disabled={formDisabled}
-                />
-                <TextInput
-                  label="Email"
-                  type="email"
-                  placeholder="owner@org.com"
-                  value={email}
-                  onChange={(v) => {
-                    setEmail(v);
-                    setErrors((e) => ({ ...e, email: undefined }));
-                  }}
-                  required
-                  error={errors.email}
-                  disabled={formDisabled}
-                />
-                <TextInput
-                  label="Date of birth"
-                  type="date"
-                  value={dob}
-                  onChange={(v) => {
-                    setDob(v);
-                    setErrors((e) => ({ ...e, dob: undefined }));
-                  }}
-                  required
-                  error={errors.dob}
-                  disabled={formDisabled}
-                />
-                <TextInput
-                  label="Aadhaar number"
-                  placeholder="XXXX XXXX XXXX"
-                  value={aadhaarPretty}
-                  onChange={(v) => {
-                    const digits = v.replace(/\D/g, "").slice(0, 12);
-                    setAadhaar(digits);
-                    setErrors((e) => ({ ...e, aadhaar: undefined }));
-                  }}
-                  inputMode="numeric"
-                  maxLength={14}
-                  hint={aadhaarValid ? "Looks good." : "12 digits required."}
-                  status={aadhaarValid ? "ok" : "warn"}
-                  required
-                  error={errors.aadhaar}
-                  disabled={formDisabled}
-                />
-              </div>
+                <SectionHeader icon={<Badge className="w-5 h-5" />}>
+                  Identity images
+                </SectionHeader>
 
-              <Divider />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <DropZone
+                    label="Aadhaar card photo"
+                    file={aadhaarImage}
+                    preview={aadhaarPreview}
+                    onFile={(f) => {
+                      const checked = validateImageFile(f);
+                      if (checked) {
+                        setAadhaarImage(checked);
+                        setErrors((e) => ({ ...e, aadhaarImage: undefined }));
+                      }
+                    }}
+                    tips={[
+                      "Clear photo of the front side",
+                      "Ensure all details are readable",
+                    ]}
+                    error={errors.aadhaarImage}
+                    disabled={formDisabled}
+                  />
+                  <DropZone
+                    label="Selfie holding Aadhaar"
+                    file={selfieImage}
+                    preview={selfiePreview}
+                    onFile={(f) => {
+                      const checked = validateImageFile(f);
+                      if (checked) {
+                        setSelfieImage(checked);
+                        setErrors((e) => ({ ...e, selfieImage: undefined }));
+                      }
+                    }}
+                    tips={[
+                      "Your face and Aadhaar must be visible",
+                      "Avoid glare and blur",
+                    ]}
+                    error={errors.selfieImage}
+                    disabled={formDisabled}
+                  />
+                </div>
 
-              <SectionHeader icon={<Badge className="w-5 h-5" />}>
-                Identity images
-              </SectionHeader>
+                <div className="flex items-start gap-3 bg-gray-800/60 border border-gray-800/80 rounded-xl p-3">
+                  <Info className="w-5 h-5 text-blue-300 mt-0.5" />
+                  <p className="text-sm text-gray-300">
+                    Your data is used only for verification by admins and isn’t
+                    shared publicly. Images are kept in a restricted folder.
+                  </p>
+                </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <DropZone
-                  label="Aadhaar card photo"
-                  file={aadhaarImage}
-                  preview={aadhaarPreview}
-                  onFile={(f) => {
-                    const checked = validateImageFile(f);
-                    if (checked) {
-                      setAadhaarImage(checked);
-                      setErrors((e) => ({ ...e, aadhaarImage: undefined }));
+                <label className="flex items-start gap-2">
+                  <input
+                    id="consent"
+                    type="checkbox"
+                    className="mt-1 accent-gaming-purple"
+                    checked={consent}
+                    onChange={(e) => {
+                      setConsent(e.target.checked);
+                      setErrors((er) => ({ ...er, consent: undefined }));
+                    }}
+                    disabled={formDisabled}
+                  />
+                  <span className="text-sm text-gray-300">
+                    I confirm the above details are correct and I consent to
+                    verification.
+                    {errors.consent && (
+                      <span className="block text-xs text-red-400 mt-1">
+                        {errors.consent}
+                      </span>
+                    )}
+                  </span>
+                </label>
+
+                <div className="flex flex-col sm:flex-row justify-end gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => navigate(-1)}
+                    className="btn-secondary"
+                  >
+                    {isApproved ? "Close" : "Cancel"}
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={!canSubmit}
+                    className={`btn-primary inline-flex items-center justify-center ${
+                      !canSubmit || isApproved || isPending
+                        ? "opacity-70 cursor-not-allowed"
+                        : ""
+                    }`}
+                    title={
+                      isApproved
+                        ? "Your organization is already verified"
+                        : isPending
+                        ? "Your submission is under review"
+                        : "Submit for review"
                     }
-                  }}
-                  tips={[
-                    "Clear photo of the front side",
-                    "Ensure all details are readable",
-                  ]}
-                  error={errors.aadhaarImage}
-                  disabled={formDisabled}
-                />
-                <DropZone
-                  label="Selfie holding Aadhaar"
-                  file={selfieImage}
-                  preview={selfiePreview}
-                  onFile={(f) => {
-                    const checked = validateImageFile(f);
-                    if (checked) {
-                      setSelfieImage(checked);
-                      setErrors((e) => ({ ...e, selfieImage: undefined }));
-                    }
-                  }}
-                  tips={[
-                    "Your face and Aadhaar must be visible",
-                    "Avoid glare and blur",
-                  ]}
-                  error={errors.selfieImage}
-                  disabled={formDisabled}
-                />
-              </div>
+                  >
+                    {submitting && !isApproved && !isPending ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />{" "}
+                        {submitLabel}
+                      </>
+                    ) : (
+                      submitLabel
+                    )}
+                  </button>
+                </div>
+              </form>
+            </Card>
+          </div>
 
-              <div className="flex items-start gap-3 bg-gray-800/60 border border-gray-800/80 rounded-xl p-3">
-                <Info className="w-5 h-5 text-blue-300 mt-0.5" />
-                <p className="text-sm text-gray-300">
-                  Your data is used only for verification by admins and isn’t shared publicly.
-                  Images are kept in a restricted folder.
-                </p>
-              </div>
-
-              <label className="flex items-start gap-2">
-                <input
-                  id="consent"
-                  type="checkbox"
-                  className="mt-1 accent-gaming-purple"
-                  checked={consent}
-                  onChange={(e) => {
-                    setConsent(e.target.checked);
-                    setErrors((er) => ({ ...er, consent: undefined }));
-                  }}
-                  disabled={formDisabled}
-                />
-                <span className="text-sm text-gray-300">
-                  I confirm the above details are correct and I consent to verification.
-                  {errors.consent && (
-                    <span className="block text-xs text-red-400 mt-1">{errors.consent}</span>
-                  )}
-                </span>
-              </label>
-
-              <div className="flex flex-col sm:flex-row justify-end gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => navigate(-1)}
-                  className="btn-secondary"
-                >
-                  {isApproved ? "Close" : "Cancel"}
-                </button>
-                <button
-                  type="submit"
-                  disabled={!canSubmit}
-                  className={`btn-primary inline-flex items-center justify-center ${
-                    (!canSubmit || isApproved || isPending) ? "opacity-70 cursor-not-allowed" : ""
-                  }`}
-                  title={isApproved ? "Your organization is already verified" : isPending ? "Your submission is under review" : "Submit for review"}
-                >
-                  {submitting && !isApproved && !isPending ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" /> {submitLabel}
-                    </>
-                  ) : (
-                    submitLabel
-                  )}
-                </button>
-              </div>
-            </form>
-          </Card>
+          {/* Right column: sticky tips */}
+          <div className="space-y-6 lg:sticky lg:top-6 h-fit">
+            <Card>
+              <SectionHeader>Why verify?</SectionHeader>
+              <ul className="list-disc pl-5 space-y-2 text-gray-300 text-sm">
+                <li>Get a visible verified badge on your org profile.</li>
+                <li>Increase trust with players and partners.</li>
+                <li>Unlock access to advanced organizer tools.</li>
+              </ul>
+            </Card>
+            <Card>
+              <SectionHeader>Photo guidelines</SectionHeader>
+              <ul className="list-disc pl-5 space-y-2 text-gray-300 text-sm">
+                <li>Use good lighting; avoid shadows and glare.</li>
+                <li>Ensure the Aadhaar number and your name are readable.</li>
+                <li>
+                  Selfie: hold the card next to your face, both clearly visible.
+                </li>
+              </ul>
+            </Card>
+          </div>
         </div>
-
-        {/* Right column: sticky tips */}
-        <div className="space-y-6 lg:sticky lg:top-6 h-fit">
-          <Card>
-            <SectionHeader>Why verify?</SectionHeader>
-            <ul className="list-disc pl-5 space-y-2 text-gray-300 text-sm">
-              <li>Get a visible verified badge on your org profile.</li>
-              <li>Increase trust with players and partners.</li>
-              <li>Unlock access to advanced organizer tools.</li>
-            </ul>
-          </Card>
-          <Card>
-            <SectionHeader>Photo guidelines</SectionHeader>
-            <ul className="list-disc pl-5 space-y-2 text-gray-300 text-sm">
-              <li>Use good lighting; avoid shadows and glare.</li>
-              <li>Ensure the Aadhaar number and your name are readable.</li>
-              <li>Selfie: hold the card next to your face, both clearly visible.</li>
-            </ul>
-          </Card>
-        </div>
-      </div>
-    </Page>
+      </Page>
+    </>
   );
 }
 
@@ -486,12 +527,11 @@ function TextInput({
   error,
   disabled,
 }) {
-  const ring =
-    error
-      ? "ring-1 ring-red-500/40"
-      : status === "ok"
-      ? "ring-1 ring-emerald-500/30"
-      : "";
+  const ring = error
+    ? "ring-1 ring-red-500/40"
+    : status === "ok"
+    ? "ring-1 ring-emerald-500/30"
+    : "";
 
   return (
     <div>
@@ -500,7 +540,9 @@ function TextInput({
         {required && <span className="text-red-400"> *</span>}
       </label>
       <input
-        className={`input w-full ${ring} ${disabled ? "opacity-70 cursor-not-allowed" : ""}`}
+        className={`input w-full ${ring} ${
+          disabled ? "opacity-70 cursor-not-allowed" : ""
+        }`}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         type={type}
@@ -525,7 +567,15 @@ function TextInput({
   );
 }
 
-function DropZone({ label, file, preview, onFile, tips = [], error, disabled }) {
+function DropZone({
+  label,
+  file,
+  preview,
+  onFile,
+  tips = [],
+  error,
+  disabled,
+}) {
   const inputRef = useRef(null);
   const [dragOver, setDragOver] = useState(false);
 
@@ -566,9 +616,13 @@ function DropZone({ label, file, preview, onFile, tips = [], error, disabled }) 
               <UploadCloud className="w-5 h-5" />
             </div>
             <div>
-              <div className="font-medium">{disabled ? "Uploads disabled" : "Click to upload"}</div>
+              <div className="font-medium">
+                {disabled ? "Uploads disabled" : "Click to upload"}
+              </div>
               <div className="text-sm text-gray-400">
-                {disabled ? "Already verified / under review" : "or drag and drop an image file (JPG/PNG/WEBP, ≤ 5MB)"}
+                {disabled
+                  ? "Already verified / under review"
+                  : "or drag and drop an image file (JPG/PNG/WEBP, ≤ 5MB)"}
               </div>
             </div>
           </div>

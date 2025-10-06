@@ -1,16 +1,24 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Link, NavLink, useNavigate } from 'react-router-dom';
+import React, { useState, useRef, useEffect, useMemo } from "react";
+import { Link, NavLink, useNavigate } from "react-router-dom";
 import {
-  Gamepad2, User, Settings, LogOut, ChevronDown, Menu, X as XIcon, ShieldCheck, Camera
-} from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
-import { uploadAPI } from '../services/api';
-import { NormalizeImageUrl } from '../utils/img';
+  Gamepad2,
+  User,
+  Settings,
+  LogOut,
+  ChevronDown,
+  Menu,
+  X as XIcon,
+  ShieldCheck,
+  Camera,
+} from "lucide-react";
+import { useAuth } from "../context/AuthContext";
+import { uploadAPI } from "../services/api";
+import { NormalizeImageUrl } from "../utils/img";
 
 const navLinks = [
-  { to: '/scrims', label: 'Scrims' },
-  { to: '/rankings', label: 'Rankings' },
-  { to: '/tournaments', label: 'Tournaments' },
+  { to: "/scrims", label: "Scrims" },
+  { to: "/rankings", label: "Rankings" },
+  { to: "/tournaments", label: "Tournaments" },
 ];
 
 const Navbar = () => {
@@ -23,45 +31,54 @@ const Navbar = () => {
 
   useEffect(() => {
     const close = (e) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) setShowDropdown(false);
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target))
+        setShowDropdown(false);
     };
-    document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
   }, []);
 
   const handleLogout = () => {
     logout();
     setShowDropdown(false);
     setMobileOpen(false);
-    navigate('/');
+    navigate("/");
   };
 
   const getDashboardLink = useMemo(() => {
-    if (!user) return '/';
+    if (!user) return "/";
     switch (user.role) {
-      case 'admin': return '/admin';
-      case 'player': return '/dashboard/player';
-      case 'organization': return '/dashboard/org';
-      default: return '/';
+      case "admin":
+        return "/admin";
+      case "player":
+        return "/dashboard/player";
+      case "organization":
+        return "/dashboard/org";
+      default:
+        return "/";
     }
   }, [user]);
 
   const uid = user?._id || user?.id || user?.userId;
 
   const linkBase =
-    'text-gray-300 hover:text-white transition-colors px-2 py-1 rounded-lg hover:bg-gray-800/70';
+    "text-gray-300 hover:text-white transition-colors px-2 py-1 rounded-lg hover:bg-gray-800/70";
   const activeLink =
-    'text-white bg-gradient-to-r from-gaming-purple/30 to-gaming-cyan/20 hover:bg-gaming-purple/40';
+    "text-white bg-gradient-to-r from-gaming-purple/30 to-gaming-cyan/20 hover:bg-gaming-purple/40";
 
   return (
     <nav className="backdrop-blur supports-[backdrop-filter]:bg-transparent bg-transparent border-b border-gray-800 sticky top-0 z-40">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-
         {/* Top Row */}
         <div className="flex justify-between items-center h-16">
           {/* Logo */}
           <Link to="/" className="group flex items-center space-x-2">
-            <img src='/logo2.png' className='h-16'/>
+            <img
+              src="/logo2.png"
+              className="h-16"
+              alt="ArenaPulse Logo"
+              title="ArenaPulse Logo"
+            />
           </Link>
 
           {/* Desktop Nav */}
@@ -71,7 +88,7 @@ const Navbar = () => {
                 key={to}
                 to={to}
                 className={({ isActive }) =>
-                  `${linkBase} ${isActive ? activeLink : ''}`
+                  `${linkBase} ${isActive ? activeLink : ""}`
                 }
               >
                 {label}
@@ -86,15 +103,14 @@ const Navbar = () => {
                 <NavLink
                   to="/login"
                   className={({ isActive }) =>
-                    `hidden sm:inline-block ${linkBase} ${isActive ? activeLink : ''}`
+                    `hidden sm:inline-block ${linkBase} ${
+                      isActive ? activeLink : ""
+                    }`
                   }
                 >
                   Login
                 </NavLink>
-                <Link
-                  to="/signup"
-                  className="btn-primary py-2 px-3 text-sm"
-                >
+                <Link to="/signup" className="btn-primary py-2 px-3 text-sm">
                   Sign Up
                 </Link>
               </>
@@ -111,22 +127,27 @@ const Navbar = () => {
                       src={NormalizeImageUrl(user.avatarUrl)}
                       alt={user.name}
                       className="w-8 h-8 rounded-full object-cover ring-2 ring-gray-700"
+                      title={user.name}
                     />
                   ) : (
                     <div className="w-8 h-8 bg-gaming-purple rounded-full grid place-items-center text-white font-bold">
-                      {user.name?.charAt(0)?.toUpperCase() || 'U'}
+                      {user.name?.charAt(0)?.toUpperCase() || "U"}
                     </div>
                   )}
                   <div className="hidden sm:block text-left">
                     <div className="text-white text-sm font-semibold leading-tight">
-                      {user.name?.length > 16 ? user.name.slice(0, 16) + '…' : user.name}
+                      {user.name?.length > 16
+                        ? user.name.slice(0, 16) + "…"
+                        : user.name}
                     </div>
                     <div className="text-[11px] text-gray-400 leading-tight capitalize">
                       {user.role}
                     </div>
                   </div>
                   <ChevronDown
-                    className={`h-4 w-4 text-gray-400 transition-transform ${showDropdown ? 'rotate-180' : ''}`}
+                    className={`h-4 w-4 text-gray-400 transition-transform ${
+                      showDropdown ? "rotate-180" : ""
+                    }`}
                     aria-hidden="true"
                   />
                 </button>
@@ -138,13 +159,25 @@ const Navbar = () => {
                     className="absolute right-0 mt-2 w-64 bg-gray-900 rounded-xl shadow-xl border border-gray-800 overflow-hidden animate-in fade-in zoom-in-95"
                   >
                     <div className="px-4 py-3 bg-gradient-to-b from-gray-900 to-gray-800 border-b border-gray-800">
-                      <p className="text-sm font-medium text-white">{user.name}</p>
-                      <p className="text-xs text-gray-400 truncate">{user.email}</p>
-                      <div className="mt-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium
-                        border border-gray-700 text-gray-300">
-                        {user.role === 'admin' && <span className="text-red-400">●</span>}
-                        {user.role === 'organization' && <span className="text-blue-400">●</span>}
-                        {user.role === 'player' && <span className="text-green-400">●</span>}
+                      <p className="text-sm font-medium text-white">
+                        {user.name}
+                      </p>
+                      <p className="text-xs text-gray-400 truncate">
+                        {user.email}
+                      </p>
+                      <div
+                        className="mt-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium
+                        border border-gray-700 text-gray-300"
+                      >
+                        {user.role === "admin" && (
+                          <span className="text-red-400">●</span>
+                        )}
+                        {user.role === "organization" && (
+                          <span className="text-blue-400">●</span>
+                        )}
+                        {user.role === "player" && (
+                          <span className="text-green-400">●</span>
+                        )}
                         {user.role}
                       </div>
                     </div>
@@ -159,7 +192,10 @@ const Navbar = () => {
                     </Link>
 
                     <button
-                      onClick={() => { setShowProfileModal(true); setShowDropdown(false); }}
+                      onClick={() => {
+                        setShowProfileModal(true);
+                        setShowDropdown(false);
+                      }}
                       className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-gray-300 hover:bg-gray-800/80 hover:text-white transition-colors"
                     >
                       <User className="h-4 w-4" />
@@ -167,7 +203,7 @@ const Navbar = () => {
                     </button>
 
                     {/* Org quick actions */}
-                    {user.role === 'organization' && uid && (
+                    {user.role === "organization" && uid && (
                       <>
                         <Link
                           to={`/rankings?highlight=${uid}`}
@@ -227,25 +263,35 @@ const Navbar = () => {
 
       {/* Mobile Sheet */}
       <div
-        className={`fixed inset-0 z-50 md:hidden transition ${mobileOpen ? 'pointer-events-auto' : 'pointer-events-none'}`}
+        className={`fixed inset-0 z-50 md:hidden transition ${
+          mobileOpen ? "pointer-events-auto" : "pointer-events-none"
+        }`}
         aria-hidden={!mobileOpen}
       >
         {/* Backdrop */}
         <div
-          className={`absolute inset-0 bg-black/50 transition-opacity ${mobileOpen ? 'opacity-100' : 'opacity-0'}`}
+          className={`absolute inset-0 bg-black/50 transition-opacity ${
+            mobileOpen ? "opacity-100" : "opacity-0"
+          }`}
           onClick={() => setMobileOpen(false)}
         />
         {/* Panel */}
         <div
           className={`absolute right-0 top-0 h-full w-[80%] max-w-sm bg-gray-900 border-l border-gray-800 shadow-2xl
-          transition-transform ${mobileOpen ? 'translate-x-0' : 'translate-x-full'}`}
+          transition-transform ${
+            mobileOpen ? "translate-x-0" : "translate-x-full"
+          }`}
         >
           <div className="flex items-center justify-between px-4 h-16 border-b border-gray-800">
             <div className="flex items-center gap-2">
               <Gamepad2 className="h-6 w-6 text-gaming-purple" />
               <span className="font-semibold">Arena Pulse</span>
             </div>
-            <button className="p-2 rounded-lg hover:bg-gray-800" onClick={() => setMobileOpen(false)} aria-label="Close menu">
+            <button
+              className="p-2 rounded-lg hover:bg-gray-800"
+              onClick={() => setMobileOpen(false)}
+              aria-label="Close menu"
+            >
               <XIcon className="h-5 w-5 text-gray-300" />
             </button>
           </div>
@@ -257,7 +303,11 @@ const Navbar = () => {
                 to={to}
                 onClick={() => setMobileOpen(false)}
                 className={({ isActive }) =>
-                  `block px-3 py-2 rounded-lg ${isActive ? activeLink : 'text-gray-300 hover:text-white hover:bg-gray-800/80'}`
+                  `block px-3 py-2 rounded-lg ${
+                    isActive
+                      ? activeLink
+                      : "text-gray-300 hover:text-white hover:bg-gray-800/80"
+                  }`
                 }
               >
                 {label}
@@ -270,7 +320,11 @@ const Navbar = () => {
                   to="/login"
                   onClick={() => setMobileOpen(false)}
                   className={({ isActive }) =>
-                    `block px-3 py-2 rounded-lg ${isActive ? activeLink : 'text-gray-300 hover:text-white hover:bg-gray-800/80'}`
+                    `block px-3 py-2 rounded-lg ${
+                      isActive
+                        ? activeLink
+                        : "text-gray-300 hover:text-white hover:bg-gray-800/80"
+                    }`
                   }
                 >
                   Login
@@ -294,13 +348,16 @@ const Navbar = () => {
                 </Link>
 
                 <button
-                  onClick={() => { setShowProfileModal(true); setMobileOpen(false); }}
+                  onClick={() => {
+                    setShowProfileModal(true);
+                    setMobileOpen(false);
+                  }}
                   className="w-full text-left px-3 py-2 rounded-lg text-gray-300 hover:text-white hover:bg-gray-800/80"
                 >
                   Edit Profile
                 </button>
 
-                {user.role === 'organization' && uid && (
+                {user.role === "organization" && uid && (
                   <>
                     <Link
                       to={`/rankings?highlight=${uid}`}
@@ -321,7 +378,9 @@ const Navbar = () => {
                       onClick={() => setMobileOpen(false)}
                       className="block px-3 py-2 rounded-lg text-emerald-300 hover:text-white hover:bg-gray-800/80"
                     >
-                      <span className="inline-flex items-center gap-2"><ShieldCheck className="h-4 w-4" /> Verify your org</span>
+                      <span className="inline-flex items-center gap-2">
+                        <ShieldCheck className="h-4 w-4" /> Verify your org
+                      </span>
                     </Link>
                   </>
                 )}
@@ -354,22 +413,22 @@ const Navbar = () => {
 
 const ProfileModal = ({ user, isOpen, onClose }) => {
   const [formData, setFormData] = React.useState({
-    name: user?.name || '',
-    avatarUrl: user?.avatarUrl || '',
+    name: user?.name || "",
+    avatarUrl: user?.avatarUrl || "",
     organizationInfo: {
-      orgName: user?.organizationInfo?.orgName || '',
-      location: user?.organizationInfo?.location || ''
-    }
+      orgName: user?.organizationInfo?.orgName || "",
+      location: user?.organizationInfo?.location || "",
+    },
   });
   const [loading, setLoading] = React.useState(false);
   const [uploading, setUploading] = React.useState(false);
-  const [preview, setPreview] = React.useState(user?.avatarUrl || '');
+  const [preview, setPreview] = React.useState(user?.avatarUrl || "");
   const fileInputRef = React.useRef(null);
   const { updateProfile } = useAuth();
 
   useEffect(() => {
     return () => {
-      if (preview && preview.startsWith('blob:')) URL.revokeObjectURL(preview);
+      if (preview && preview.startsWith("blob:")) URL.revokeObjectURL(preview);
     };
   }, [preview]);
 
@@ -383,7 +442,7 @@ const ProfileModal = ({ user, isOpen, onClose }) => {
         window.location.reload();
       }
     } catch (error) {
-      console.error('Profile update failed:', error);
+      console.error("Profile update failed:", error);
     } finally {
       setLoading(false);
     }
@@ -395,15 +454,21 @@ const ProfileModal = ({ user, isOpen, onClose }) => {
 
     // local preview
     const url = URL.createObjectURL(file);
-    setPreview((p) => { if (p?.startsWith('blob:')) URL.revokeObjectURL(p); return url; });
+    setPreview((p) => {
+      if (p?.startsWith("blob:")) URL.revokeObjectURL(p);
+      return url;
+    });
 
     setUploading(true);
     try {
       const res = await uploadAPI.uploadImage(file);
-      setFormData((prev) => ({ ...prev, avatarUrl: res?.data?.imageUrl || '' }));
+      setFormData((prev) => ({
+        ...prev,
+        avatarUrl: res?.data?.imageUrl || "",
+      }));
     } catch (error) {
-      console.error('Image upload failed:', error);
-      alert('Failed to upload image');
+      console.error("Image upload failed:", error);
+      alert("Failed to upload image");
       // revert preview if needed
     } finally {
       setUploading(false);
@@ -417,7 +482,11 @@ const ProfileModal = ({ user, isOpen, onClose }) => {
       <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-md shadow-2xl">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
           <h3 className="text-lg font-semibold">Edit Profile</h3>
-          <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-800" aria-label="Close">
+          <button
+            onClick={onClose}
+            className="p-2 rounded-lg hover:bg-gray-800"
+            aria-label="Close"
+          >
             <XIcon className="h-5 w-5 text-gray-300" />
           </button>
         </div>
@@ -434,7 +503,7 @@ const ProfileModal = ({ user, isOpen, onClose }) => {
                 />
               ) : (
                 <div className="w-24 h-24 bg-gaming-purple rounded-full grid place-items-center text-white text-3xl font-bold">
-                  {formData.name?.charAt(0)?.toUpperCase() || 'U'}
+                  {formData.name?.charAt(0)?.toUpperCase() || "U"}
                 </div>
               )}
               <button
@@ -454,47 +523,63 @@ const ProfileModal = ({ user, isOpen, onClose }) => {
               accept="image/*"
               className="hidden"
             />
-            {uploading && <div className="text-xs text-gray-400 mt-1">Uploading…</div>}
+            {uploading && (
+              <div className="text-xs text-gray-400 mt-1">Uploading…</div>
+            )}
           </div>
 
           {/* Name */}
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">Name</label>
+            <label className="block text-sm font-medium text-gray-300 mb-1">
+              Name
+            </label>
             <input
               type="text"
               value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              onChange={(e) =>
+                setFormData({ ...formData, name: e.target.value })
+              }
               className="input w-full"
               required
             />
           </div>
 
           {/* Org fields */}
-          {user?.role === 'organization' && (
+          {user?.role === "organization" && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">Organization Name</label>
+                <label className="block text-sm font-medium text-gray-300 mb-1">
+                  Organization Name
+                </label>
                 <input
                   type="text"
                   value={formData.organizationInfo.orgName}
                   onChange={(e) =>
                     setFormData({
                       ...formData,
-                      organizationInfo: { ...formData.organizationInfo, orgName: e.target.value },
+                      organizationInfo: {
+                        ...formData.organizationInfo,
+                        orgName: e.target.value,
+                      },
                     })
                   }
                   className="input w-full"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">Location</label>
+                <label className="block text-sm font-medium text-gray-300 mb-1">
+                  Location
+                </label>
                 <input
                   type="text"
                   value={formData.organizationInfo.location}
                   onChange={(e) =>
                     setFormData({
                       ...formData,
-                      organizationInfo: { ...formData.organizationInfo, location: e.target.value },
+                      organizationInfo: {
+                        ...formData.organizationInfo,
+                        location: e.target.value,
+                      },
                     })
                   }
                   className="input w-full"
@@ -505,11 +590,20 @@ const ProfileModal = ({ user, isOpen, onClose }) => {
           )}
 
           <div className="flex gap-3 pt-2">
-            <button type="button" onClick={onClose} className="flex-1 btn-secondary" disabled={loading}>
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 btn-secondary"
+              disabled={loading}
+            >
               Cancel
             </button>
-            <button type="submit" className="flex-1 btn-primary" disabled={loading || uploading}>
-              {loading ? 'Saving…' : 'Save Changes'}
+            <button
+              type="submit"
+              className="flex-1 btn-primary"
+              disabled={loading || uploading}
+            >
+              {loading ? "Saving…" : "Save Changes"}
             </button>
           </div>
         </form>
