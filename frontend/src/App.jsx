@@ -12,6 +12,10 @@ import AdminKycReview from "./pages/AdminKycReview";
 import RequireAdmin from "./components/RequireAdmin";
 import GroupRoom from "./components/PlayerGroupRoomModal"; // <-- apni file/component
 import RoomPage from "./components/RoomView"; // <-- apni file/component
+import CancellationRefund from './pages/CancellationRefund';
+import ContactUs from './pages/ContactUs';
+import TermsConditions from './pages/TermsConditions';
+import Shipping from './pages/Shipping';
 
 import ErrorBoundary from "./ErrorBoundary";
 import { HelmetProvider } from "react-helmet-async";
@@ -58,6 +62,10 @@ function App() {
                 <Route path="/scrims" element={<ScrimList />} />
                 <Route path="/scrims/:id" element={<ScrimDetail />} />
                 <Route path="/rankings" element={<Rankings />} />
+                <Route path="/cancellation-refund" element={<CancellationRefund />} />
+<Route path="/contact" element={<ContactUs />} />
+<Route path="/terms" element={<TermsConditions />} />
+<Route path="/shipping" element={<Shipping />} />
                 <Route
                   path="/organizations/:orgId"
                   element={<OrganizationProfile />}

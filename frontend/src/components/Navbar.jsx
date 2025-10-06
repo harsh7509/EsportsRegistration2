@@ -10,6 +10,10 @@ import {
   X as XIcon,
   ShieldCheck,
   Camera,
+  FileText,
+  Mail,
+  Truck,
+  RotateCcw,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { uploadAPI } from "../services/api";
@@ -21,18 +25,35 @@ const navLinks = [
   { to: "/tournaments", label: "Tournaments" },
 ];
 
+// NEW: support/legal links used in desktop dropdown + mobile list
+const supportLinks = [
+  { to: "/contact", label: "Contact Us", icon: Mail },
+  { to: "/terms", label: "Terms & Conditions", icon: FileText },
+  { to: "/cancellation-refund", label: "Cancellation & Refund", icon: RotateCcw },
+  { to: "/shipping", label: "Shipping", icon: Truck },
+];
+
 const Navbar = () => {
   const { user, isAuthenticated, logout } = useAuth();
   const [showDropdown, setShowDropdown] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  // NEW: “More” menu state
+  const [showMore, setShowMore] = useState(false);
+
   const dropdownRef = useRef(null);
+  const moreRef = useRef(null);
   const navigate = useNavigate();
 
   useEffect(() => {
     const close = (e) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target))
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
         setShowDropdown(false);
+      }
+      if (moreRef.current && !moreRef.current.contains(e.target)) {
+        setShowMore(false);
+      }
     };
     document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);
@@ -94,6 +115,54 @@ const Navbar = () => {
                 {label}
               </NavLink>
             ))}
+
+            {/* NEW: More (Support & Legal) dropdown */}
+            <div className="relative" ref={moreRef}>
+              <button
+                onClick={() => setShowMore((v) => !v)}
+                className={`${linkBase} inline-flex items-center gap-1.5`}
+                aria-haspopup="menu"
+                aria-expanded={showMore}
+                aria-label="More links"
+              >
+                More
+                <ChevronDown
+                  className={`h-4 w-4 text-gray-400 transition-transform ${
+                    showMore ? "rotate-180" : ""
+                  }`}
+                />
+              </button>
+
+              {showMore && (
+                <div
+                  role="menu"
+                  className="absolute right-0 mt-2 w-72 bg-gray-900 rounded-xl shadow-xl border border-gray-800 overflow-hidden animate-in fade-in zoom-in-95"
+                >
+                  <div className="px-4 py-2.5 text-xs uppercase tracking-wide text-gray-400 border-b border-gray-800">
+                    Support & Legal
+                  </div>
+                  <div className="py-1">
+                    {supportLinks.map(({ to, label, icon: Icon }) => (
+                      <NavLink
+                        key={to}
+                        to={to}
+                        onClick={() => setShowMore(false)}
+                        className={({ isActive }) =>
+                          `flex items-center gap-3 px-4 py-2.5 text-sm ${
+                            isActive
+                              ? "text-white bg-white/5"
+                              : "text-gray-300 hover:text-white hover:bg-gray-800/80"
+                          }`
+                        }
+                      >
+                        <Icon className="h-4 w-4" />
+                        {label}
+                      </NavLink>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Right – Auth/User */}
@@ -237,6 +306,29 @@ const Navbar = () => {
 
                     <div className="my-1 border-t border-gray-800" />
 
+                    {/* NEW: quick support row inside user menu (optional) */}
+                    <div className="px-2 py-1">
+                      {supportLinks.slice(0, 2).map(({ to, label, icon: Icon }) => (
+                        <NavLink
+                          key={to}
+                          to={to}
+                          onClick={() => setShowDropdown(false)}
+                          className={({ isActive }) =>
+                            `flex items-center gap-3 px-2.5 py-2 rounded-lg text-sm ${
+                              isActive
+                                ? "text-white bg-white/5"
+                                : "text-gray-300 hover:text-white hover:bg-gray-800/80"
+                            }`
+                          }
+                        >
+                          <Icon className="h-4 w-4" />
+                          {label}
+                        </NavLink>
+                      ))}
+                    </div>
+
+                    <div className="my-1 border-t border-gray-800" />
+
                     <button
                       onClick={handleLogout}
                       className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-red-400 hover:bg-gray-800/80 hover:text-red-300 transition-colors"
@@ -313,6 +405,31 @@ const Navbar = () => {
                 {label}
               </NavLink>
             ))}
+
+            {/* NEW: Support & Legal (mobile) */}
+            <div className="pt-4">
+              <div className="px-3 pb-2 text-xs uppercase tracking-wide text-gray-400">
+                Support & Legal
+              </div>
+              <div className="space-y-1">
+                {supportLinks.map(({ to, label }) => (
+                  <NavLink
+                    key={to}
+                    to={to}
+                    onClick={() => setMobileOpen(false)}
+                    className={({ isActive }) =>
+                      `block px-3 py-2 rounded-lg ${
+                        isActive
+                          ? "text-white bg-white/5"
+                          : "text-gray-300 hover:text-white hover:bg-gray-800/80"
+                      }`
+                    }
+                  >
+                    {label}
+                  </NavLink>
+                ))}
+              </div>
+            </div>
 
             {!isAuthenticated ? (
               <div className="pt-4 space-y-2">
@@ -469,7 +586,6 @@ const ProfileModal = ({ user, isOpen, onClose }) => {
     } catch (error) {
       console.error("Image upload failed:", error);
       alert("Failed to upload image");
-      // revert preview if needed
     } finally {
       setUploading(false);
     }

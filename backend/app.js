@@ -1,6 +1,7 @@
 import express from "express";
 import corsConfig from "./config/corsConfig.js";
 import routes from "./src/routes/index.js";
+import supportRoutes from "./src/routes/support.js";
 
 const app = express();
 app.set("trust proxy", 1);
@@ -11,6 +12,7 @@ app.use(express.json());
 
 // Routes
 app.use("/api", routes);
+app.use("/api/support", supportRoutes);
 
 // Static
 import path from "path";

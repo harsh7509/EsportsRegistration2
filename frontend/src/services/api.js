@@ -134,6 +134,15 @@ export const authAPI = {
   verifyOtp: (body) => api.post('/auth/otp/verify', body),
 };
 
+export async function sendContact(data) {
+  const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/support/contact`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include', // if you use cookies
+    body: JSON.stringify(data),
+  });
+  return res.json();
+}
 export const uploadAPI = {
   uploadImage: (file) => {
     const formData = new FormData();
