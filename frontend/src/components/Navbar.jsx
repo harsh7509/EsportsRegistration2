@@ -14,6 +14,7 @@ import {
   Mail,
   Truck,
   RotateCcw,
+  Lock,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { uploadAPI } from "../services/api";
@@ -31,6 +32,7 @@ const supportLinks = [
   { to: "/terms", label: "Terms & Conditions", icon: FileText },
   { to: "/cancellation-refund", label: "Cancellation & Refund", icon: RotateCcw },
   { to: "/shipping", label: "Shipping", icon: Truck },
+  { to: "/privacy", label: "Privacy Policy", icon: Lock }, 
 ];
 
 const Navbar = () => {

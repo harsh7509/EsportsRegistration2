@@ -16,6 +16,7 @@ import CancellationRefund from './pages/CancellationRefund';
 import ContactUs from './pages/ContactUs';
 import TermsConditions from './pages/TermsConditions';
 import Shipping from './pages/Shipping';
+import PrivacyPolicy from './pages/PrivacyPolicy';
 
 import ErrorBoundary from "./ErrorBoundary";
 import { HelmetProvider } from "react-helmet-async";
@@ -66,6 +67,7 @@ function App() {
 <Route path="/contact" element={<ContactUs />} />
 <Route path="/terms" element={<TermsConditions />} />
 <Route path="/shipping" element={<Shipping />} />
+<Route path="/privacy" element={<PrivacyPolicy />} />
                 <Route
                   path="/organizations/:orgId"
                   element={<OrganizationProfile />}
