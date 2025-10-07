@@ -16,7 +16,7 @@ if (!import.meta.env.VITE_API_URL) {
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>
-      <ErrorBoundary>
+      <ErrorBoundary> 
         <AuthProvider apiBase={API}>
           <ErrorBoundary>
             <SocketProvider apiBase={API}>
