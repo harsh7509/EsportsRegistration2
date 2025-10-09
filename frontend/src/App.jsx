@@ -4,6 +4,7 @@ import { Toaster } from "react-hot-toast";
 import OrgTournamentCreate from "./pages/OrgTournamentCreate";
 import TournamentDetail from "./pages/TournamentDetails";
 import TournamentList from "./pages/TournamentList";
+import CFReturn from './pages/CFReturn';
 
 import EditTournament from "./pages/EditTournament";
 import TournamentManage from "./pages/TournamentManage";
@@ -68,6 +69,7 @@ function App() {
 <Route path="/terms" element={<TermsConditions />} />
 <Route path="/shipping" element={<Shipping />} />
 <Route path="/privacy" element={<PrivacyPolicy />} />
+<Route path="/payments/cf/return" element={<CFReturn />} />
                 <Route
                   path="/organizations/:orgId"
                   element={<OrganizationProfile />}

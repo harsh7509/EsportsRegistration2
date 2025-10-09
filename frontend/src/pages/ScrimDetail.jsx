@@ -18,7 +18,7 @@ import { useAuth } from "../context/AuthContext";
 import { useSocket } from "../context/SocketContext";
 import { X } from "lucide-react";
 import BookingModal from "../components/BookingModal";
-import PaymentModal from "../components/PaymentModal";
+
 import ScrimManagement from "../components/ScrimManagement";
 import RoomView from "../components/RoomView";
 import RatingModal from "../components/RateOrgModal";
@@ -192,7 +192,6 @@ const ScrimDetail = () => {
 
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [roomCredentials, setRoomCredentials] = useState(null);
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showManagement, setShowManagement] = useState(false);
   const [showRatingModal, setShowRatingModal] = useState(false);
   const [showRoom, setShowRoom] = useState(false);
@@ -316,14 +315,10 @@ const ScrimDetail = () => {
   };
 
   const handleBookingSuccess = () => {
-    setIsBooked(true);
-    if (Number(scrim.entryFee) > 0) {
-      setShowBookingModal(false);
-      setShowPaymentModal(true);
-    } else {
-      fetchScrimDetails();
-    }
-  };
+   setIsBooked(true);
+   // For free scrims BookingModal will fetch room creds; just refresh details here.
+   fetchScrimDetails();
+ };
 
   const handlePaymentSuccess = () => {
     setShowPaymentModal(false);
@@ -763,13 +758,7 @@ const ScrimDetail = () => {
           onBookingSuccess={handleBookingSuccess}
         />
 
-        {/* Payment Modal */}
-        <PaymentModal
-          scrim={scrim}
-          isOpen={showPaymentModal}
-          onClose={() => setShowPaymentModal(false)}
-          onPaymentSuccess={handlePaymentSuccess}
-        />
+        
 
         {/* Rating Modals */}
         <RatingModal
