@@ -9,14 +9,14 @@ const CF_BASE =
     : "https://sandbox.cashfree.com/pg";
 
 function requireEnv(name) {
-  const v = process.env[name];
+  const v = (process.env[name] || "").trim();
   if (!v) throw new Error(`Missing env ${name}`);
   return v;
 }
 
 router.post("/create-order", async (req, res) => {
   try {
-    const { amount, currency = "INR", customer, bookingId, scrimId, playerId } = req.body;
+    const { amount, currency = "INR", customer, bookingId, scrimId, playerId, note } = req.body;
 
     const APP_ID = requireEnv("CASHFREE_APP_ID");
     const APP_SECRET = requireEnv("CASHFREE_SECRET_KEY");
@@ -43,17 +43,18 @@ router.post("/create-order", async (req, res) => {
           customer_phone: customer?.phone || "9999999999",
         },
         order_meta: {
-          return_url: process.env.CF_RETURN_URL, // ...?order_id={order_id}
+          return_url: process.env.CF_RETURN_URL,
           notify_url: `${process.env.BACKEND_PUBLIC_URL}/api/payments/cf/webhook`,
           payment_methods: "upi",
         },
-        order_note: "ArenaPulse booking",
+        order_note: note || "ArenaPulse booking",
       }),
     });
 
     const data = await resp.json();
 
     if (!resp.ok) {
+      console.error("CF /orders error:", resp.status, data);
       return res.status(400).json({
         ok: false,
         error: data?.message || data?.error || "Cashfree error",
@@ -61,7 +62,6 @@ router.post("/create-order", async (req, res) => {
       });
     }
 
-    // Persist
     try {
       const Payment = (await import("../models/Payment.js")).default;
       await Payment.findOneAndUpdate(
@@ -104,6 +104,38 @@ router.get("/status/:orderId", async (req, res) => {
     res.status(resp.ok ? 200 : 400).json(data);
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message || "server_error" });
+  }
+});
+
+// ---- optional diagnostic endpoint ----
+const mask = (s = "") => (s.length <= 6 ? "***" : s.slice(0, 4) + "****" + s.slice(-3));
+
+router.get("/_authcheck", async (req, res) => {
+  try {
+    const appId = requireEnv("CASHFREE_APP_ID");
+    const secret = requireEnv("CASHFREE_SECRET_KEY");
+    const fake = "AP_FAKE_" + Date.now();
+
+    const resp = await fetch(`${CF_BASE}/orders/${fake}`, {
+      headers: {
+        "x-client-id": appId,
+        "x-client-secret": secret,
+        "x-api-version": "2022-09-01",
+      },
+    });
+    const text = await resp.text();
+    // 404 => auth OK; 401 => bad auth
+    return res.status(200).json({
+      ok: true,
+      cashfree_env: process.env.CASHFREE_ENV || "sandbox(default)",
+      cf_base: CF_BASE,
+      app_id_sample: mask(appId),
+      secret_sample: mask(secret),
+      cf_status: resp.status,
+      cf_body: text.slice(0, 240),
+    });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e.message });
   }
 });
 

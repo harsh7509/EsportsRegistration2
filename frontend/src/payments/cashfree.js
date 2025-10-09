@@ -25,7 +25,7 @@ export async function startCFCheckout({ rupees, bookingId, scrimId, customer }) 
   if (!order?.ok) throw new Error(order?.error || "Failed to create order");
 
   const cashfree = window.Cashfree({
-    mode: import.meta.env.VITE_CF_MODE || "sandbox",
+    mode: import.meta.env.VITE_CF_MODE ,
   });
 
   const result = await cashfree.checkout({

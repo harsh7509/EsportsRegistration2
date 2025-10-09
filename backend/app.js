@@ -2,7 +2,7 @@ import express from "express";
 import corsConfig from "./config/corsConfig.js";
 import routes from "./src/routes/index.js";
 import supportRoutes from "./src/routes/support.js";
-import cashfreeRoutes from "./src/routes/cashfree.js";
+import cashfRoutes from "./src/routes/cashfree.js";
 import cfWebhook from      "./src/routes/cf_webhook.js";
 
 import cfReturn from       "./src/routes/cf_return.js";
@@ -14,7 +14,7 @@ app.set("trust proxy", 1);
 app.use(corsConfig);
 app.use("/api/payments/cf", cfWebhook); // raw handler
 app.use(express.json());
-app.use("/api/payments/cf", cashfreeRoutes);
+app.use("/api/payments/cf", cashfRoutes);
 app.use('/api/payments/cf', cfReturn);
 
 // Routes
