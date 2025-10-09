@@ -27,6 +27,7 @@ import { scrimsAPI } from "../services/api";
 import toast from "react-hot-toast";
 import SEO from "../components/SEO"
 
+
 /* --------------------- UI bits --------------------- */
 
 const StatPill = ({ icon: Icon, children, tone = "default", title }) => {
