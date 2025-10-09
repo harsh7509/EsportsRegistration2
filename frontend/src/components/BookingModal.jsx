@@ -2,8 +2,11 @@ import React, { useState } from 'react';
 import { X, Lock, Users, Phone, Hash, Shield } from 'lucide-react';
 import { scrimsAPI } from '../services/api';
 import toast from 'react-hot-toast';
+import { useAuth } from '../context/AuthContext';
+import { startCFCheckout } from '../payments/cashfree';
 
 const BookingModal = ({ scrim, isOpen, onClose, onBookingSuccess }) => {
+  const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [roomCredentials, setRoomCredentials] = useState(null);
   const [playerInfo, setPlayerInfo] = useState({
@@ -45,13 +48,34 @@ const BookingModal = ({ scrim, isOpen, onClose, onBookingSuccess }) => {
     try {
       const response = await scrimsAPI.book(scrim._id, payload);
 
+      
       toast.success('Successfully booked scrim!');
-      onBookingSuccess?.(response.data.requiresPayment);
 
-      // Auto-fetch room credentials for free scrims
-      if (!response.data.requiresPayment) {
+      const requiresPayment = !!response?.data?.requiresPayment;
+      const bookingId = response?.data?.booking?._id;
+
+      if (requiresPayment) {
+        if (!window.Cashfree) {
+          toast.error('Payments unavailable right now');
+          return;
+        }
+        await startCFCheckout({
+          rupees: Number(scrim.entryFee),
+          bookingId,
+          scrimId: scrim._id,
+          customer: {
+            id: user?._id || user?.id || user?.userId,
+            name: user?.name || 'Guest',
+            email: user?.email || 'guest@example.com',
+            phone: user?.phone || '9999999999',
+          },
+        });
+        // Cashfree will redirect to your return page.
+        return;
+      } else {
         const roomResponse = await scrimsAPI.getRoomCredentials(scrim._id);
         setRoomCredentials(roomResponse.data);
+        onBookingSuccess?.(false);
       }
     } catch (error) {
       toast.error(error?.response?.data?.message || 'Booking failed');
