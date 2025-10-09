@@ -134,7 +134,7 @@ const ScrimList = () => {
 
   // Client-only quick filters
   const [feeFilter, setFeeFilter] = useState("all");
-  the
+
   const [selectedDate, setSelectedDate] = useState("");
   const [priceExact, setPriceExact] = useState("");
   const [totalPages, setTotalPages] = useState(1);
