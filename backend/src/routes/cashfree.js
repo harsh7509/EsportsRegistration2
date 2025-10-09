@@ -139,4 +139,40 @@ router.get("/_authcheck", async (req, res) => {
   }
 });
 
+// --- Add this proxied SDK endpoint (so the browser can load it even if CDN is blocked) ---
+router.get("/sdk.js", async (req, res) => {
+  try {
+    const mode = (req.query.mode || "").toString() === "sandbox" ? "sandbox" : "production";
+    // Prefer v3 SDK
+    const v3Url = "https://sdk.cashfree.com/js/v3/cashfree.js";
+    // Legacy fallback (rarely needed)
+    const legacyUrl = mode === "production"
+      ? "https://sdk.cashfree.com/js/ui/2.0.0/cashfree.js"
+      : "https://sdk.cashfree.com/js/ui/2.0.0/cashfree.sandbox.js";
+
+    // Try v3
+    let upstream = await fetch(v3Url, { redirect: "follow" });
+    if (!upstream.ok) {
+      // Try legacy
+      upstream = await fetch(legacyUrl, { redirect: "follow" });
+    }
+    if (!upstream.ok) {
+      console.error("CF SDK proxy upstream error:", upstream.status, upstream.statusText);
+      return res.status(502).send("Failed to fetch Cashfree SDK");
+    }
+
+    // Pass JS back with safe headers
+    res.setHeader("Content-Type", "application/javascript; charset=utf-8");
+    res.setHeader("Cache-Control", "public, max-age=300"); // 5 min
+    // NOTE: We intentionally do NOT set Access-Control-Allow-Origin here
+    // because <script> tags don't require CORS; this is a plain script.
+    const body = await upstream.text();
+    return res.status(200).send(body);
+  } catch (e) {
+    console.error("CF SDK proxy error:", e);
+    return res.status(500).send("server_error");
+  }
+});
+
+
 export default router;
