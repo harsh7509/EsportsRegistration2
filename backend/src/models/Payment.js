@@ -4,7 +4,7 @@ const PaymentSchema = new mongoose.Schema({
   scrimId: { type: mongoose.Schema.Types.ObjectId, ref: 'Scrim', required: true },
   playerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   amount: { type: Number, required: true },
-  ccurrency: { type: String, default: 'INR' },
+  currency: { type: String, default: 'INR' },
   provider: { type: String, default: 'cashfree' },
   orderId: String,             
   paymentSessionId: String,    
