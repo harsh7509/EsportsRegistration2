@@ -23,17 +23,40 @@ const BookingModal = ({ scrim, isOpen, onClose, onBookingSuccess }) => {
     setPlayerInfo((s) => ({ ...s, [k]: e.target.value }));
 
   const handleBooking = async () => {
-    // ✅ Frontend validations to match backend requirements
-    if (!playerInfo.ign.trim()) {
-      toast.error('Please enter your in-game name (IGN)');
-      return;
-    }
-    if (!playerInfo.contactNumber.trim()) {
-      toast.error('Please enter your contact number');
+  // ✅ validations (as you already had)
+  if (!playerInfo.ign.trim()) {
+    toast.error('Please enter your in-game name (IGN)');
+    return;
+  }
+  if (!playerInfo.contactNumber.trim()) {
+    toast.error('Please enter your contact number');
+    return;
+  }
+
+  const isPaid = Number(scrim.entryFee) > 0;
+
+  setLoading(true);
+  try {
+    if (isPaid) {
+      // 🟣 PAY FIRST (no pre-book). Webhook will book after success.
+      await startCFCheckout({
+        rupees: Number(scrim.entryFee),
+        bookingId: undefined, // ⟵ important: do NOT pre-create
+        scrimId: scrim._id,
+        customer: {
+          id: user?._id || user?.id || user?.userId,
+          name: user?.name || 'Guest',
+          email: user?.email || 'guest@example.com',
+          phone: user?.phone || '9999999999',
+        },
+      });
+      // Cashfree will redirect to your return page; on success the webhook will
+      // create/mark the booking. Back on the site, you can refresh details.
+      toast.success('Redirecting to payment…');
       return;
     }
 
-    // Optionally trim before sending
+    // 🟢 FREE FLOW (book now)
     const payload = {
       playerInfo: {
         ign: playerInfo.ign.trim(),
@@ -43,46 +66,21 @@ const BookingModal = ({ scrim, isOpen, onClose, onBookingSuccess }) => {
         discordId: playerInfo.discordId?.trim() || undefined,
       }
     };
+    const response = await scrimsAPI.book(scrim._id, payload);
 
-    setLoading(true);
-    try {
-      const response = await scrimsAPI.book(scrim._id, payload);
+    // show room creds for free scrims as you had
+    const roomResponse = await scrimsAPI.getRoomCredentials(scrim._id);
+    setRoomCredentials(roomResponse.data);
+    onBookingSuccess?.(false);
+    toast.success('Successfully booked scrim!');
+  } catch (error) {
+    console.error(error);
+    toast.error(error?.message || error?.response?.data?.message || 'Action failed');
+  } finally {
+    setLoading(false);
+  }
+};
 
-      
-      toast.success('Successfully booked scrim!');
-
-      const requiresPayment = !!response?.data?.requiresPayment;
-      const bookingId = response?.data?.booking?._id;
-
-      if (requiresPayment) {
-        if (!window.Cashfree) {
-          toast.error('Payments unavailable right now');
-          return;
-        }
-        await startCFCheckout({
-          rupees: Number(scrim.entryFee),
-          bookingId,
-          scrimId: scrim._id,
-          customer: {
-            id: user?._id || user?.id || user?.userId,
-            name: user?.name || 'Guest',
-            email: user?.email || 'guest@example.com',
-            phone: user?.phone || '9999999999',
-          },
-        });
-        // Cashfree will redirect to your return page.
-        return;
-      } else {
-        const roomResponse = await scrimsAPI.getRoomCredentials(scrim._id);
-        setRoomCredentials(roomResponse.data);
-        onBookingSuccess?.(false);
-      }
-    } catch (error) {
-      toast.error(error?.response?.data?.message || 'Booking failed');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const dateStr = (() => {
     try {

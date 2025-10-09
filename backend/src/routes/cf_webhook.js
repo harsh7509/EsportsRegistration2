@@ -69,30 +69,59 @@ webhook.post("/webhook", express.raw({ type: "application/json" }), async (req, 
     const amount        = event?.data?.order?.order_amount;
 
     // 🔧 FIX: सही relative path (routes -> ../models)
-    const Payment = (await import("../models/Payment.js")).default;
-    const Booking = (await import("../models/Booking.js")).default;
+    // ...inside your verified section, after reading event & loading models:
 
-    await Payment.updateOne(
-      { orderId },
-      { $push: { webhooks: { at: new Date(), type, paymentStatus } } },
-      { upsert: true }
-    );
+const Payment = (await import("../models/Payment.js")).default;
+const Booking = (await import("../models/Booking.js")).default;
 
-    if (paymentStatus === "SUCCESS") {
-      const p = await Payment.findOneAndUpdate(
-        { orderId },
-        { status: "completed", transactionId: cfPaymentId, cfPaymentId, paidAt: new Date(), amount },
-        { new: true }
+// log webhook
+await Payment.updateOne(
+  { orderId },
+  { $push: { webhooks: { at: new Date(), type, paymentStatus } } },
+  { upsert: true }
+);
+
+if (paymentStatus === "SUCCESS") {
+  const p = await Payment.findOneAndUpdate(
+    { orderId },
+    {
+      status: "completed",
+      transactionId: cfPaymentId,
+      cfPaymentId,
+      paidAt: new Date(),
+      amount
+    },
+    { new: true }
+  );
+
+  // 🟣 CREATE booking if it doesn't exist (pay-first flow)
+  if (p?.scrimId && p?.playerId) {
+    const existing = await Booking.findOne({
+      scrimId: p.scrimId,
+      playerId: p.playerId
+    });
+
+    if (!existing) {
+      // Create a new active, paid booking
+      await Booking.create({
+        scrimId: p.scrimId,
+        playerId: p.playerId,
+        status: "active",
+        paid: true,
+        // Optional fields you might have: slotNumber, playerInfo, etc.
+      });
+    } else if (existing?.status !== "active" || !existing?.paid) {
+      // Or just ensure it is marked paid/active
+      await Booking.updateOne(
+        { _id: existing._id },
+        { $set: { paid: true, status: "active" } }
       );
-      if (p?.scrimId && p?.playerId) {
-        await Booking.updateOne(
-          { scrimId: p.scrimId, playerId: p.playerId, status: "active" },
-          { paid: true }
-        );
-      }
-    } else if (paymentStatus === "FAILED") {
-      await Payment.updateOne({ orderId }, { status: "failed" });
     }
+  }
+} else if (paymentStatus === "FAILED") {
+  await Payment.updateOne({ orderId }, { status: "failed" });
+}
+
 
     return res.status(200).end();
   } catch (e) {
