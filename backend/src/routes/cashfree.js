@@ -1,5 +1,4 @@
 import express from "express";
-import fetch from "node-fetch";
 import { randomUUID } from "crypto";
 
 const router = express.Router();
@@ -62,7 +61,7 @@ router.post("/create-order", async (req, res) => {
       });
     }
 
-    // 🔧 FIX: सही relative path (routes -> ../models)
+    // Persist
     try {
       const Payment = (await import("../models/Payment.js")).default;
       await Payment.findOneAndUpdate(
