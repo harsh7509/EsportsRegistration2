@@ -5,6 +5,8 @@ import supportRoutes from "./src/routes/support.js";
 import cashfreeRoutes from "./src/routes/cashfree.js";
 import cfWebhook from      "./src/routes/cf_webhook.js";
 
+import cfReturn from       "./src/routes/cf_return.js";
+
 const app = express();
 app.set("trust proxy", 1);
 
