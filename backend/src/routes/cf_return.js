@@ -27,28 +27,45 @@ router.get("/return", async (req, res) => {
       },
     });
     const data = await resp.json();
+    const status = data?.order_status; // PAID / FAILED / etc.
 
-    try {
-      const Payment = (await import("../models/Payment.js")).default;
-      if (data?.order_status === "PAID") {
-        await Payment.findOneAndUpdate(
-          { orderId },
-          { status: "completed", paidAt: new Date(), amount: data?.order_amount },
-          { new: true }
+    const Payment = (await import("../models/Payment.js")).default;
+    const Booking = (await import("../models/Booking.js")).default;
+
+    // Find the related payment to know which scrim/player/booking it was
+    const p = await Payment.findOne({ orderId });
+
+    if (status === "PAID") {
+      // Mark payment + make sure booking exists & is paid
+      await Payment.updateOne(
+        { orderId },
+        { $set: { status: "completed", paidAt: new Date(), amount: data?.order_amount } }
+      );
+
+      if (p?.scrimId && p?.playerId) {
+        const booking = await Booking.findOneAndUpdate(
+          { scrimId: p.scrimId, playerId: p.playerId },
+          { $set: { paid: true, status: "active" } },
+          { upsert: true, new: true }
         );
-      } else if (data?.order_status === "FAILED") {
-        await Payment.findOneAndUpdate({ orderId }, { status: "failed" });
+        if (booking && !p?.bookingId) {
+          await Payment.updateOne({ orderId }, { $set: { bookingId: booking._id } });
+        }
       }
-    } catch (e) {
-      console.warn("Return reconcile warn:", e?.message);
+
+      // ✅ Redirect straight to the scrim page
+      const to = `${process.env.FRONTEND_URL?.replace(/\/+$/,'')}/scrims/${p?.scrimId}?paid=1`;
+      return res.redirect(to);
     }
 
-    const to = `${process.env.FRONTEND_URL?.replace(/\/+$/,'') || ""}/payments/cf/result?order_id=${orderId}&status=${encodeURIComponent(data?.order_status || "UNKNOWN")}`;
-    return res.redirect(to);
+    // Non-PAID → redirect back with a status for UI to show message
+    const fallback = `${process.env.FRONTEND_URL?.replace(/\/+$/,'')}/scrims/${p?.scrimId || ""}?status=${encodeURIComponent(status || "UNKNOWN")}`;
+    return res.redirect(fallback);
   } catch (e) {
     console.error("CF return error:", e);
     return res.status(500).send("server_error");
   }
 });
+
 
 export default router;

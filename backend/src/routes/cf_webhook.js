@@ -89,38 +89,29 @@ if (paymentStatus === "SUCCESS") {
       transactionId: cfPaymentId,
       cfPaymentId,
       paidAt: new Date(),
-      amount
+      amount,
     },
     { new: true }
   );
 
-  // 🟣 CREATE booking if it doesn't exist (pay-first flow)
   if (p?.scrimId && p?.playerId) {
-    const existing = await Booking.findOne({
-      scrimId: p.scrimId,
-      playerId: p.playerId
-    });
+    // 1) ensure a booking exists and is paid
+    const Booking = (await import("../models/Booking.js")).default;
+    const booking = await Booking.findOneAndUpdate(
+      { scrimId: p.scrimId, playerId: p.playerId },
+      { $set: { paid: true, status: "active" } },
+      { upsert: true, new: true }
+    );
 
-    if (!existing) {
-      // Create a new active, paid booking
-      await Booking.create({
-        scrimId: p.scrimId,
-        playerId: p.playerId,
-        status: "active",
-        paid: true,
-        // Optional fields you might have: slotNumber, playerInfo, etc.
-      });
-    } else if (existing?.status !== "active" || !existing?.paid) {
-      // Or just ensure it is marked paid/active
-      await Booking.updateOne(
-        { _id: existing._id },
-        { $set: { paid: true, status: "active" } }
-      );
+    // 2) (optional) keep bookingId on payment for easy lookup on return
+    if (booking && !p.bookingId) {
+      await Payment.updateOne({ _id: p._id }, { $set: { bookingId: booking._id } });
     }
   }
 } else if (paymentStatus === "FAILED") {
   await Payment.updateOne({ orderId }, { status: "failed" });
 }
+
 
 
     return res.status(200).end();

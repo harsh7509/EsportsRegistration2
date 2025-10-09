@@ -1,3 +1,4 @@
+// src/pages/ScrimList.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Calendar,
@@ -19,14 +20,12 @@ import { Link, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { scrimsAPI } from "../services/api";
 import { useAuth } from "../context/AuthContext";
-import SEO from "../components/SEO"
+import SEO from "../components/SEO";
+import CreateScrimModal from "../components/CreateScrimModal"; // ✅ bring in the same modal used on OrgDashboard
 
 /**
  * ScrimList — Pro Hub+
- * - Denser sticky toolbar with counters, quick chips, and "Clear all"
- * - Snappy horizontal rows w/ game badges, fee chips, and mini-capacity bars
- * - Nicer skeletons, empty state CTA, accessible focus rings
- * - Animations kept subtle; logic/API unchanged
+ * (unchanged features; only added CreateScrimModal hookup)
  */
 
 const Chip = ({ active, onClick, children }) => (
@@ -135,6 +134,7 @@ const ScrimList = () => {
 
   // Client-only quick filters
   const [feeFilter, setFeeFilter] = useState("all");
+  the
   const [selectedDate, setSelectedDate] = useState("");
   const [priceExact, setPriceExact] = useState("");
   const [totalPages, setTotalPages] = useState(1);
@@ -143,6 +143,9 @@ const ScrimList = () => {
   const [pastOpen, setPastOpen] = useState(false);
   const [pastOrg, setPastOrg] = useState(null);
   const [pastList, setPastList] = useState([]);
+
+  // ✅ NEW: create-scrim modal state
+  const [showCreateModal, setShowCreateModal] = useState(false);
 
   useEffect(() => {
     fetchScrims(); /* eslint-disable-next-line */
@@ -289,6 +292,12 @@ const ScrimList = () => {
     setPastOpen(true);
   };
 
+  // ✅ when a scrim is created from this page, close modal & refresh
+  const handleScrimCreated = () => {
+    setShowCreateModal(false);
+    fetchScrims();
+  };
+
   return (
     <>
       <SEO
@@ -398,15 +407,17 @@ const ScrimList = () => {
                 >
                   <RefreshCw className="h-4 w-4" /> Clear
                 </button>
-                {/* Org-only action */}
+
+                {/* ✅ Org-only: open modal directly (no route) */}
                 {user?.role === "organization" && (
-                  <Link
-                    to="/scrims/new"
+                  <button
+                    type="button"
+                    onClick={() => setShowCreateModal(true)}
                     className="inline-flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-sm font-semibold text-gray-900 hover:bg-white/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
                     title="Create a new scrim"
                   >
                     <Plus className="h-4 w-4" /> Create Scrim
-                  </Link>
+                  </button>
                 )}
               </div>
             </div>
@@ -822,6 +833,13 @@ const ScrimList = () => {
           )}
         </AnimatePresence>
       </div>
+
+      {/* ✅ Create Scrim Modal (same as OrgDashboard) */}
+      <CreateScrimModal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onScrimCreated={handleScrimCreated}
+      />
     </>
   );
 };
