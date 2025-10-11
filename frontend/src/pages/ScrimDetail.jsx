@@ -4,7 +4,7 @@ import {
   Calendar,
   Users,
   Trophy,
-  DollarSign,
+  IndianRupee,
   Lock,
   ExternalLink,
   MessageSquare,
@@ -430,14 +430,14 @@ const ScrimDetail = () => {
                     {joined}/{capacity} players
                   </StatPill>
                   {Number(scrim.entryFee) > 0 ? (
-                    <StatPill icon={DollarSign} tone="yellow">
+                    <StatPill icon={IndianRupee} tone="yellow">
                       ₹
                       {Number(scrim.entryFee || scrim.price).toLocaleString(
                         "en-IN"
                       )}
                     </StatPill>
                   ) : (
-                    <StatPill icon={DollarSign} tone="green">
+                    <StatPill icon={IndianRupee} tone="green">
                       Free
                     </StatPill>
                   )}
