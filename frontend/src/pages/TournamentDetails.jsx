@@ -14,6 +14,7 @@ import {
   ClipboardCopy,
   Edit3,
   Gift,
+  CheckCircle2,
 } from "lucide-react";
 import { tournamentsAPI } from "../services/api";
 import { useAuth } from "../context/AuthContext";
@@ -57,9 +58,8 @@ const Field = ({ label, ...props }) => (
     <input
       {...props}
       className={`w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder:text-white/40 outline-none transition
-      focus:border-white/20 focus:ring-2 focus:ring-indigo-500/30 ${
-        props.className || ""
-      }`}
+      focus:border-white/20 focus:ring-2 focus:ring-indigo-500/30 ${props.className || ""
+        }`}
     />
   </label>
 );
@@ -69,9 +69,8 @@ const PlayerCard = ({ index, value, onChange, required }) => (
     <div className="mb-2 flex items-center justify-between text-xs">
       <div className="font-medium text-white/90">Player {index + 1}</div>
       <div
-        className={`text-[10px] ${
-          required ? "text-rose-300/90" : "text-white/50"
-        }`}
+        className={`text-[10px] ${required ? "text-rose-300/90" : "text-white/50"
+          }`}
       >
         {required ? "Required" : "Optional"}
       </div>
@@ -109,9 +108,9 @@ const PrizePool = ({ tournament, compact = false }) => {
   const total =
     Number(
       tournament?.prizePoolTotal ??
-        tournament?.prizePool ??
-        tournament?.prizepool ??
-        0
+      tournament?.prizePool ??
+      tournament?.prizepool ??
+      0
     ) || 0;
 
   const text =
@@ -170,10 +169,10 @@ const PrizePool = ({ tournament, compact = false }) => {
                     {row.place === 1
                       ? "1st"
                       : row.place === 2
-                      ? "2nd"
-                      : row.place === 3
-                      ? "3rd"
-                      : `${row.place}th`}{" "}
+                        ? "2nd"
+                        : row.place === 3
+                          ? "3rd"
+                          : `${row.place}th`}{" "}
                     Place
                   </span>
                   <span className="font-semibold">
@@ -247,8 +246,8 @@ const TournamentDetails = () => {
     typeof t?.organizationId === "object"
       ? t.organizationId
       : t?.organizationId
-      ? { _id: t.organizationId }
-      : null;
+        ? { _id: t.organizationId }
+        : null;
 
   const capacity = Math.max(0, Number(t?.capacity || 0));
   const registeredCount = Math.min(
@@ -294,20 +293,20 @@ const TournamentDetails = () => {
     // Common collections
     const inParticipants = Array.isArray(t.participants)
       ? t.participants.some(
-          (p) =>
-            (p?.userId?._id || p?.user?._id || p?.userId || p?._id || p) === uid
-        )
+        (p) =>
+          (p?.userId?._id || p?.user?._id || p?.userId || p?._id || p) === uid
+      )
       : false;
 
     const inRegistrations = Array.isArray(t.registrations)
       ? t.registrations.some(
-          (r) =>
-            (r?.userId?._id ||
-              r?.captainId ||
-              r?.teamLeadId ||
-              r?.userId ||
-              r?._id) === uid
-        )
+        (r) =>
+          (r?.userId?._id ||
+            r?.captainId ||
+            r?.teamLeadId ||
+            r?.userId ||
+            r?._id) === uid
+      )
       : false;
 
     return inParticipants || inRegistrations;
@@ -356,24 +355,24 @@ const TournamentDetails = () => {
 
               const hasObj = Array.isArray(g.members)
                 ? g.members.some(
-                    (m) =>
-                      (m?.userId?._id ||
-                        m?.user?._id ||
-                        m?.userId ||
-                        m?._id ||
-                        m) === uid
-                  )
+                  (m) =>
+                    (m?.userId?._id ||
+                      m?.user?._id ||
+                      m?.userId ||
+                      m?._id ||
+                      m) === uid
+                )
                 : false;
 
               const hasParticipants = Array.isArray(g.participants)
                 ? g.participants.some(
-                    (m) =>
-                      (m?.userId?._id ||
-                        m?.user?._id ||
-                        m?.userId ||
-                        m?._id ||
-                        m) === uid
-                  )
+                  (m) =>
+                    (m?.userId?._id ||
+                      m?.user?._id ||
+                      m?.userId ||
+                      m?._id ||
+                      m) === uid
+                )
                 : false;
 
               // attach number for UI convenience
@@ -408,23 +407,23 @@ const TournamentDetails = () => {
             );
             const hasObj = Array.isArray(g.members)
               ? g.members.some(
-                  (m) =>
-                    (m?.userId?._id ||
-                      m?.user?._id ||
-                      m?.userId ||
-                      m?._id ||
-                      m) === uid
-                )
+                (m) =>
+                  (m?.userId?._id ||
+                    m?.user?._id ||
+                    m?.userId ||
+                    m?._id ||
+                    m) === uid
+              )
               : false;
             const hasParticipants = Array.isArray(g.participants)
               ? g.participants.some(
-                  (m) =>
-                    (m?.userId?._id ||
-                      m?.user?._id ||
-                      m?.userId ||
-                      m?._id ||
-                      m) === uid
-                )
+                (m) =>
+                  (m?.userId?._id ||
+                    m?.user?._id ||
+                    m?.userId ||
+                    m?._id ||
+                    m) === uid
+              )
               : false;
 
             if ((hasId || hasObj || hasParticipants) && number != null)
@@ -459,6 +458,41 @@ const TournamentDetails = () => {
     }
     return null;
   }, [myGroup]);
+
+  // Is tournament completed?
+  const isCompleted = useMemo(() => {
+    const end = t?.endAt || t?.timeSlot?.end;
+    if (!end) return false;
+    return Date.now() >= new Date(end).getTime();
+  }, [t]);
+
+  useEffect(() => {
+    if (isCompleted && showRegForm) setShowRegForm(false);
+  }, [isCompleted, showRegForm]);
+
+
+  // Mark as completed
+  const [completing, setCompleting] = useState(false);
+  const markCompleted = async () => {
+    if (isCompleted || completing) return;
+    const ok = window.confirm('Mark this tournament as completed?');
+    if (!ok) return;
+    try {
+      setCompleting(true);
+      const res = await tournamentsAPI.update(t?._id || id, {
+        endAt: new Date().toISOString(),
+        status: 'completed', // harmless if backend ignores
+      });
+      const updated = res?.data?.tournament || res?.data || null;
+      if (updated) setT(updated);
+      toast.success('Tournament marked completed');
+    } catch (e) {
+      toast.error(e?.response?.data?.message || 'Failed to mark completed');
+    } finally {
+      setCompleting(false);
+    }
+  };
+
 
   const goToMyGroup = () => {
     if (!myGroup) return;
@@ -495,6 +529,10 @@ const TournamentDetails = () => {
   };
 
   const submitRegister = async () => {
+    if (isCompleted) {
+      toast.error("Registration is closed for this tournament.");
+      return;
+    }
     try {
       if (!user) return toast.error("Please sign in to register");
 
@@ -559,13 +597,14 @@ const TournamentDetails = () => {
         <div className="fixed inset-x-0 bottom-0 z-20 border-t border-white/10 bg-gray-900/70 backdrop-blur supports-[backdrop-filter]:bg-gray-900/50 p-3 sm:hidden">
           <div className="mx-auto flex max-w-5xl items-center gap-2">
             {t.registrationUrl ? (
-              isRegistered ? (
+              isRegistered || isCompleted ? (
                 <button
                   disabled
                   className="flex-1 rounded-xl bg-white/10 px-4 py-3 text-center text-sm font-semibold text-white/70 cursor-not-allowed"
-                  title="You are already registered"
+                  title={isCompleted ? "Tournament completed" : "You are already registered"}
                 >
-                  Already Registered
+
+                  {isCompleted ? "Registration Closed" : "Already Registered"}
                 </button>
               ) : (
                 <a
@@ -579,20 +618,25 @@ const TournamentDetails = () => {
               )
             ) : (
               <button
-                onClick={() => !isRegistered && setShowRegForm((v) => !v)}
-                disabled={isRegistered}
-                className={`flex-1 rounded-xl px-4 py-3 text-sm font-semibold active:scale-[0.99] ${
-                  isRegistered
+                onClick={() => (!isRegistered && !isCompleted) && setShowRegForm(v => !v)}
+                disabled={isRegistered || isCompleted}
+                className={`flex-1 rounded-xl px-4 py-3 text-sm font-semibold active:scale-[0.99] ${(isRegistered || isCompleted)
                     ? "bg-white/10 text-white/70 cursor-not-allowed"
                     : "bg-indigo-500 text-white hover:bg-indigo-600"
-                }`}
-                title={isRegistered ? "You are already registered" : undefined}
+                  }`}
+                title={
+                  isRegistered ? "You are already registered"
+                    : isCompleted ? "Tournament completed"
+                      : undefined
+                }
               >
                 {isRegistered
                   ? "Already Registered"
-                  : showRegForm
-                  ? "Hide Form"
-                  : "Register Now"}
+                  : isCompleted
+                    ? "Registration Closed"
+                    : showRegForm
+                      ? "Hide Form"
+                      : "Register Now"}
               </button>
             )}
 
@@ -641,6 +685,28 @@ const TournamentDetails = () => {
                 >
                   <Edit3 className="h-4 w-4" /> Edit
                 </Link>
+              )}
+
+              {canEdit && (
+                isCompleted ? (
+                  <span
+                    className="inline-flex items-center gap-2 rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-3 py-1.5 text-sm font-semibold text-emerald-200"
+                    title="Tournament is completed"
+                  >
+                    <CheckCircle2 className="h-4 w-4" />
+                    Completed
+                  </span>
+                ) : (
+                  <button
+                    onClick={markCompleted}
+                    disabled={completing}
+                    className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700 active:scale-[0.99]"
+                    title="Move this tournament to Past"
+                  >
+                    <CheckCircle2 className="h-4 w-4" />
+                    {completing ? 'Marking…' : 'Mark Completed'}
+                  </button>
+                )
               )}
               {/* NEW: Desktop "My Group" / status inline (top actions) */}
               {isRegistered &&
@@ -703,6 +769,14 @@ const TournamentDetails = () => {
                 <h1 className="mb-2 text-2xl sm:text-3xl font-bold tracking-tight text-white">
                   {t.title}
                 </h1>
+                {isCompleted && (
+                  <div className="mt-1">
+                    <Badge className="bg-emerald-500/15 border-emerald-400/30 text-emerald-200">
+                      <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
+                      Completed
+                    </Badge>
+                  </div>
+                )}
 
                 {org && (
                   <div className="mb-4 flex items-center gap-3 text-gray-300">
@@ -774,13 +848,13 @@ const TournamentDetails = () => {
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {t.registrationUrl ? (
-                    isRegistered ? (
+                    isRegistered || isCompleted ? (
                       <button
                         disabled
                         className="inline-flex flex-1 items-center justify-center rounded-xl bg-white/10 px-4 py-2.5 text-sm font-semibold text-white/70 cursor-not-allowed"
-                        title="You are already registered"
+                        title={isCompleted ? "Tournament completed" : "You are already registered"}
                       >
-                        Already Registered
+                        {isCompleted ? "Registration Closed" : "Already Registered"}
                       </button>
                     ) : (
                       <a
@@ -794,22 +868,25 @@ const TournamentDetails = () => {
                     )
                   ) : (
                     <button
-                      onClick={() => !isRegistered && setShowRegForm((v) => !v)}
-                      disabled={isRegistered}
-                      className={`inline-flex flex-1 items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold ${
-                        isRegistered
+                      onClick={() => (!isRegistered && !isCompleted) && setShowRegForm(v => !v)}
+                      disabled={isRegistered || isCompleted}
+                      className={`inline-flex flex-1 items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold ${(isRegistered || isCompleted)
                           ? "bg-white/10 text-white/70 cursor-not-allowed"
                           : "bg-indigo-500 text-white hover:bg-indigo-600 active:scale-[0.99]"
-                      }`}
+                        }`}
                       title={
-                        isRegistered ? "You are already registered" : undefined
+                        isRegistered ? "You are already registered"
+                          : isCompleted ? "Tournament completed"
+                            : undefined
                       }
                     >
                       {isRegistered
                         ? "Already Registered"
-                        : showRegForm
-                        ? "Hide Form"
-                        : "Register Now"}
+                        : isCompleted
+                          ? "Registration Closed"
+                          : showRegForm
+                            ? "Hide Form"
+                            : "Register Now"}
                     </button>
                   )}
                   {org?._id && (
@@ -829,6 +906,7 @@ const TournamentDetails = () => {
                       <Edit3 className="mr-2 h-4 w-4" /> Edit
                     </Link>
                   )}
+
 
                   {/* NEW: Desktop CTA — My Group / status */}
                   {isRegistered &&
@@ -875,11 +953,10 @@ const TournamentDetails = () => {
                   key={key}
                   onClick={() => setActiveTab(key)}
                   className={`inline-flex min-w-[100px] items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm transition
-                ${
-                  activeTab === key
-                    ? "bg-indigo-500 text-white"
-                    : "text-white/80 hover:bg-white/10"
-                }`}
+                ${activeTab === key
+                      ? "bg-indigo-500 text-white"
+                      : "text-white/80 hover:bg-white/10"
+                    }`}
                 >
                   <Icon className="h-4 w-4" />
                   {label}

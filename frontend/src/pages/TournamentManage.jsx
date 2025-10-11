@@ -14,7 +14,7 @@ import { useAuth } from '../context/AuthContext';
 export default function TournamentManage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { loading: authLoading, isAuthenticated } = useAuth();
+  const { loading: authLoading, isAuthenticated,user } = useAuth();
 
   // data
   const [participants, setParticipants] = useState([]);
@@ -464,6 +464,30 @@ export default function TournamentManage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+  {user?.role === 'organization' && (
+     <button
+       className="btn-secondary"
+       onClick={async () => {
+         if (deleted) return;
+         try {
+           await tournamentsAPI.update(id, {
+             endAt: new Date().toISOString(),
+             status: 'completed',
+           });
+           await load();
+           toast.success('Tournament marked completed (moved to Past)');
+         } catch (e) {
+           toast.error(e?.response?.data?.message || 'Failed to mark completed');
+         }
+       }}
+       disabled={deleted}
+       title="Set tournament as completed"
+     >
+       Mark Completed
+     </button>
+  )}
+
+      
           <button className="btn-secondary" onClick={() => setTEditOpen(true)} disabled={deleted}>
             <Edit3 className="h-4 w-4 mr-2" /> Edit
           </button>
