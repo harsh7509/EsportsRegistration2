@@ -1,16 +1,15 @@
 // vite.config.js
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import { ViteSitemapPlugin } from "vite-plugin-sitemap"; // <-- named export
+import sitemap from "vite-plugin-sitemap";
 
 export default defineConfig({
   plugins: [
     react(),
-    ViteSitemapPlugin({
-      hostname: "https://thearenapulse.xyz",
-      robots: false,     // robots.txt ko touch mat karo
-      // optionally: routes: [],  // agar aap khud routes doge to
-    }),
+    sitemap(
+      [],                       // 👈 rules array (empty bhi chalega)
+      { hostname: "https://thearenapulse.xyz", robots: false }
+    ),
   ],
   server: {
     port: 5173,
