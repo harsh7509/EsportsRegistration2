@@ -1,5 +1,6 @@
+// backend/src/routes/payments.return.js
 import express from "express";
-
+import Scrim from "../models/Scrim.js";           // <-- add this
 const router = express.Router();
 
 const CF_BASE =
@@ -8,12 +9,11 @@ const CF_BASE =
     : "https://sandbox.cashfree.com/pg";
 
 function requireEnv(name) {
-  const v = process.env[name];
+  const v = (process.env[name] || "").trim();
   if (!v) throw new Error(`Missing env ${name}`);
   return v;
 }
 
-// GET /api/payments/cf/return?order_id=...
 router.get("/return", async (req, res) => {
   try {
     const orderId = req.query.order_id || req.query.orderId;
@@ -27,45 +27,53 @@ router.get("/return", async (req, res) => {
       },
     });
     const data = await resp.json();
-    const status = data?.order_status; // PAID / FAILED / etc.
+    const status = data?.order_status; // PAID / FAILED / ...
 
     const Payment = (await import("../models/Payment.js")).default;
     const Booking = (await import("../models/Booking.js")).default;
 
-    // Find the related payment to know which scrim/player/booking it was
+    // Identify payment → scrim & player
     const p = await Payment.findOne({ orderId });
+    const FE = (process.env.FRONTEND_URL || "").replace(/\/+$/, "");
+    const toList = `${FE}/scrims`;
+    const toScrim = p?.scrimId ? `${FE}/scrims/${p.scrimId}` : toList;
 
-    if (status === "PAID") {
-      // Mark payment + make sure booking exists & is paid
+    if (status === "PAID" && p?.scrimId && p?.playerId) {
+      // 1) Mark payment paid
       await Payment.updateOne(
         { orderId },
         { $set: { status: "completed", paidAt: new Date(), amount: data?.order_amount } }
       );
 
-      if (p?.scrimId && p?.playerId) {
-        const booking = await Booking.findOneAndUpdate(
-          { scrimId: p.scrimId, playerId: p.playerId },
-          { $set: { paid: true, status: "active" } },
-          { upsert: true, new: true }
-        );
-        if (booking && !p?.bookingId) {
-          await Payment.updateOne({ orderId }, { $set: { bookingId: booking._id } });
-        }
+      // 2) Upsert booking as paid/active
+      const booking = await Booking.findOneAndUpdate(
+        { scrimId: p.scrimId, playerId: p.playerId },
+        { $set: { paid: true, status: "active" }, $setOnInsert: { bookedAt: new Date() } },
+        { upsert: true, new: true }
+      );
+      if (booking && !p?.bookingId) {
+        await Payment.updateOne({ orderId }, { $set: { bookingId: booking._id } });
       }
 
-      // ✅ Redirect straight to the scrim page
-      const to = `${process.env.FRONTEND_URL?.replace(/\/+$/,'')}/scrims/${p?.scrimId}?paid=1`;
-      return res.redirect(to);
+      // 3) Ensure scrim.participants contains the player (so isBooked checks pass)
+      await Scrim.updateOne(
+        { _id: p.scrimId },
+        {
+          $addToSet: { participants: p.playerId },
+          // keep meta optional; you can enrich later when you collect IGN
+        }
+      );
+
+      // 4) Redirect the user straight to the scrim with a success flag
+      return res.redirect(`${toScrim}?paid=1`);
     }
 
-    // Non-PAID → redirect back with a status for UI to show message
-    const fallback = `${process.env.FRONTEND_URL?.replace(/\/+$/,'')}/scrims/${p?.scrimId || ""}?status=${encodeURIComponent(status || "UNKNOWN")}`;
-    return res.redirect(fallback);
+    // Non-PAID → bounce back with status so UI can show a message
+    return res.redirect(`${toScrim}?status=${encodeURIComponent(status || "UNKNOWN")}`);
   } catch (e) {
     console.error("CF return error:", e);
     return res.status(500).send("server_error");
   }
 });
-
 
 export default router;
