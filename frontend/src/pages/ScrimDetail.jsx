@@ -1,11 +1,10 @@
-// src/pages/ScrimDetail.jsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate, useParams, Link, useLocation } from "react-router-dom";
 import {
   Calendar,
   Users,
   Trophy,
-  IndianRupee,
+  DollarSign,
   Lock,
   ExternalLink,
   MessageSquare,
@@ -14,10 +13,10 @@ import {
   Clock,
   ShieldCheck,
   ArrowLeft,
-  X,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useSocket } from "../context/SocketContext";
+import { X } from "lucide-react";
 import BookingModal from "../components/BookingModal";
 
 import ScrimManagement from "../components/ScrimManagement";
@@ -26,7 +25,8 @@ import RatingModal from "../components/RateOrgModal";
 import OrgRatingModal from "../components/OrgRatingModal";
 import { scrimsAPI } from "../services/api";
 import toast from "react-hot-toast";
-import SEO from "../components/SEO";
+import SEO from "../components/SEO"
+
 
 /* --------------------- UI bits --------------------- */
 
@@ -91,20 +91,25 @@ const toValidDate = (v) => {
   if (v instanceof Date) return isNaN(v) ? null : v;
   if (typeof v === "number") return new Date(v);
 
+  // string cases
   let s = String(v).trim();
   if (!s) return null;
 
+  // "YYYY-MM-DD HH:mm" -> "YYYY-MM-DDTHH:mm:00"
   if (/^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}$/.test(s)) {
     s = s.replace(" ", "T") + ":00";
   }
+  // "YYYY-MM-DD" (date-only) -> treat as local day start
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
     const [Y, M, D] = s.split("-").map(Number);
     return new Date(Y, M - 1, D, 0, 0, 0, 0);
   }
 
+  // Try native parse for ISO-like strings
   const d = new Date(s);
   if (!isNaN(d)) return d;
 
+  // Fallback: replace '-' with '/' for Safari quirks
   const d2 = new Date(s.replace(/-/g, "/"));
   return isNaN(d2) ? null : d2;
 };
@@ -114,9 +119,9 @@ const getPhase = (startISO, endISO) => {
   const s = toValidDate(startISO);
   const e = toValidDate(endISO);
 
-  if (s && now < s.getTime()) return "before";
-  if (s && e && now >= s.getTime() && now <= e.getTime()) return "during";
-  if (e && now > e.getTime()) return "after";
+  if (s && now < s.getTime()) return "before"; // future
+  if (s && e && now >= s.getTime() && now <= e.getTime()) return "during"; // between
+  if (e && now > e.getTime()) return "after"; // past
   return "unknown";
 };
 
@@ -179,9 +184,6 @@ const ScrimDetail = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const qs = new URLSearchParams(location.search);
-  const paidLanding = qs.get("paid") === "1" || qs.get("paid") === "true";
-
   const { user, isAuthenticated } = useAuth();
   const { socket } = useSocket();
 
@@ -216,7 +218,7 @@ const ScrimDetail = () => {
   }
 
   useEffect(() => {
-    fetchScrimDetails(); // eslint-disable-next-line
+    fetchScrimDetails(); /* eslint-disable-next-line */
   }, [id]);
 
   // After Cashfree redirect (?paid=1 or ?status=PAID), refresh and show success
@@ -230,12 +232,9 @@ const ScrimDetail = () => {
     }
   }, [location.search]);
 
-  // 1) Socket wiring (join room + listeners)
   useEffect(() => {
     if (!socket || !scrim?._id) return;
-
     socket.emit("join-scrim", scrim._id);
-
     const onAdded = (data) => {
       if (data?.scrimId === scrim._id) {
         setScrim((prev) => ({
@@ -245,36 +244,19 @@ const ScrimDetail = () => {
         toast.success("New participant joined!");
       }
     };
-
     const onPoints = (data) => {
       if (data?.scrimId === scrim._id) {
         setScrim((prev) => ({ ...prev, pointsTableUrl: data.pointsTableUrl }));
         toast.success("Points table updated!");
       }
     };
-
     socket.on("scrim:participant_added", onAdded);
     socket.on("scrim:points_updated", onPoints);
-
     return () => {
       socket.off("scrim:participant_added", onAdded);
       socket.off("scrim:points_updated", onPoints);
     };
-  }, [socket, scrim?._id]);
-
-  // 2) After Cashfree redirect, auto-open the room view once details are present
-  useEffect(() => {
-    if (!paidLanding || !scrim?._id) return;
-    setShowRoom(true);
-    (async () => {
-      try {
-        const response = await scrimsAPI.getRoomCredentials(scrim._id);
-        setRoomCredentials(response.data);
-      } catch {
-        toast.error("Failed to get room credentials");
-      }
-    })();
-  }, [paidLanding, scrim?._id]);
+  }, [socket, scrim]);
 
   // ---------- guards ----------
   if (loading) {
@@ -317,6 +299,12 @@ const ScrimDetail = () => {
     scrim.status === "upcoming" &&
     startDate &&
     startDate.getTime() > Date.now();
+  const liveLabel =
+    scrim.status === "ongoing" ? (
+      <span className="text-pink-300">Live now</span>
+    ) : scrim.status === "completed" ? (
+      <span className="text-white/70">Ended</span>
+    ) : null;
 
   const bookingOpen = (() => {
     if (!scrim) return false;
@@ -326,7 +314,11 @@ const ScrimDetail = () => {
   })();
 
   const canBook =
-    isAuthenticated && user?.role === "player" && !isBooked && !isFull && bookingOpen;
+    isAuthenticated &&
+    user?.role === "player" &&
+    !isBooked &&
+    !isFull &&
+    bookingOpen;
 
   // ---------- handlers ----------
   const handleViewRoom = async () => {
@@ -339,10 +331,12 @@ const ScrimDetail = () => {
   };
 
   const handleBookingSuccess = () => {
-    setIsBooked(true);
-    fetchScrimDetails();
-  };
+   setIsBooked(true);
+   // For free scrims BookingModal will fetch room creds; just refresh details here.
+   fetchScrimDetails();
+ };
 
+  // (remove this function or keep only the lines below if you ever call it)
   const handlePaymentSuccess = () => {
     fetchScrimDetails();
     toast.success("You have been added to the scrim room!");
@@ -373,7 +367,7 @@ const ScrimDetail = () => {
         title="Scrim Details – Match Info & Teams | ArenaPulse"
         description="View complete details of this esports scrim including teams, schedule, format, and rules. Join and compete directly on ArenaPulse."
         keywords="scrim details, esports match info, join scrim, scrim schedule"
-        canonical={`https://thearenapulse.xyz/scrims/${id}`}
+        canonical={`https://thearenapulse.xyz/scrims/${id}`} // dynamic
         schema={{
           "@context": "https://schema.org",
           "@type": "Event",
@@ -425,11 +419,14 @@ const ScrimDetail = () => {
                     {joined}/{capacity} players
                   </StatPill>
                   {Number(scrim.entryFee) > 0 ? (
-                    <StatPill icon={IndianRupee} tone="yellow">
-                      ₹{Number(scrim.entryFee || scrim.price).toLocaleString("en-IN")}
+                    <StatPill icon={DollarSign} tone="yellow">
+                      ₹
+                      {Number(scrim.entryFee || scrim.price).toLocaleString(
+                        "en-IN"
+                      )}
                     </StatPill>
                   ) : (
-                    <StatPill icon={IndianRupee} tone="green">
+                    <StatPill icon={DollarSign} tone="green">
                       Free
                     </StatPill>
                   )}
@@ -454,8 +451,11 @@ const ScrimDetail = () => {
                             Starts in: <Countdown startISO={start} />
                           </>
                         );
-                      if (phase === "during") return <span className="text-pink-300">Live now</span>;
-                      if (phase === "after") return <span className="text-white/70">Ended</span>;
+                      if (phase === "during")
+                        return <span className="text-pink-300">Live now</span>;
+                      if (phase === "after")
+                        return <span className="text-white/70">Ended</span>;
+                      // fallback if we truly can't parse dates:
                       return "TBA";
                     })()}
                   </div>
@@ -485,7 +485,9 @@ const ScrimDetail = () => {
 
             {scrim.pointsTableUrl && (
               <div className="card">
-                <h2 className="text-xl font-semibold mb-3">Points & Standings</h2>
+                <h2 className="text-xl font-semibold mb-3">
+                  Points & Standings
+                </h2>
                 <a
                   href={scrim.pointsTableUrl}
                   target="_blank"
@@ -500,7 +502,10 @@ const ScrimDetail = () => {
             {/* Owner management toggle */}
             {isOwner && showManagement && (
               <div className="card p-0 overflow-hidden">
-                <ScrimManagement scrim={scrim} onScrimUpdate={handleScrimUpdate} />
+                <ScrimManagement
+                  scrim={scrim}
+                  onScrimUpdate={handleScrimUpdate}
+                />
               </div>
             )}
 
@@ -520,7 +525,11 @@ const ScrimDetail = () => {
               <div className="space-y-3 mb-5">
                 <InfoRow label="Game" value={scrim.game} />
                 <InfoRow label="Platform" value={scrim.platform} />
-                <InfoRow label="Time" value={fmtTimeRange(start, end)} icon={Clock} />
+                <InfoRow
+                  label="Time"
+                  value={fmtTimeRange(start, end)}
+                  icon={Clock}
+                />
               </div>
 
               {/* Capacity */}
@@ -539,12 +548,20 @@ const ScrimDetail = () => {
                 {bookedPaid ? (
                   <>
                     <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-3 text-center">
-                      <span className="text-emerald-300 font-medium">✓ You're registered</span>
+                      <span className="text-emerald-300 font-medium">
+                        ✓ You're registered
+                      </span>
                     </div>
-                    <button onClick={handleViewRoom} className="w-full btn-primary">
+                    <button
+                      onClick={handleViewRoom}
+                      className="w-full btn-primary"
+                    >
                       <Lock className="h-4 w-4 mr-2" /> View Room Credentials
                     </button>
-                    <button onClick={() => setShowRoom((v) => !v)} className="w-full btn-secondary">
+                    <button
+                      onClick={() => setShowRoom((v) => !v)}
+                      className="w-full btn-secondary"
+                    >
                       <MessageSquare className="h-4 w-4 mr-2" />
                       {showRoom ? "Hide" : "Show"} Room Chat
                     </button>
@@ -566,11 +583,17 @@ const ScrimDetail = () => {
                     )}
                   </>
                 ) : canBook ? (
-                  <button onClick={() => setShowBookingModal(true)} className="w-full btn-primary">
+                  <button
+                    onClick={() => setShowBookingModal(true)}
+                    className="w-full btn-primary"
+                  >
                     Book Slot
                   </button>
                 ) : (
-                  <button disabled className="w-full bg-white/10 text-white/50 py-2 px-4 rounded-lg cursor-not-allowed">
+                  <button
+                    disabled
+                    className="w-full bg-white/10 text-white/50 py-2 px-4 rounded-lg cursor-not-allowed"
+                  >
                     {!isAuthenticated
                       ? "Login to Book"
                       : isFull
@@ -580,7 +603,10 @@ const ScrimDetail = () => {
                       : !bookingOpen
                       ? `Booking closed — starts at ${
                           startDate
-                            ? startDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                            ? startDate.toLocaleTimeString([], {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })
                             : "TBA"
                         }`
                       : "Cannot Book"}
@@ -589,7 +615,10 @@ const ScrimDetail = () => {
 
                 {isOwner && (
                   <div className="space-y-2">
-                    <button onClick={() => setShowManagement((v) => !v)} className="w-full btn-secondary">
+                    <button
+                      onClick={() => setShowManagement((v) => !v)}
+                      className="w-full btn-secondary"
+                    >
                       {showManagement ? "Hide Management" : "Manage Scrim"}
                     </button>
                     <button
@@ -615,11 +644,15 @@ const ScrimDetail = () => {
                       className="h-10 w-10 rounded-full object-cover"
                     />
                   ) : (
-                    <span>{scrim.createdBy?.name?.charAt(0)?.toUpperCase() || "O"}</span>
+                    <span>
+                      {scrim.createdBy?.name?.charAt(0)?.toUpperCase() || "O"}
+                    </span>
                   )}
                 </div>
                 <div className="flex-1">
-                  <p className="font-medium leading-tight">{scrim.createdBy?.name}</p>
+                  <p className="font-medium leading-tight">
+                    {scrim.createdBy?.name}
+                  </p>
                   <div className="flex items-center gap-2 mt-1">
                     {scrim.createdBy?.organizationInfo?.verified && (
                       <StatPill tone="green">✓ Verified</StatPill>
@@ -647,11 +680,17 @@ const ScrimDetail = () => {
               <Progress value={joined} max={capacity || 1} />
             </div>
             {bookedPaid ? (
-              <button onClick={handleViewRoom} className="btn-primary px-4 py-2">
+              <button
+                onClick={handleViewRoom}
+                className="btn-primary px-4 py-2"
+              >
                 Room
               </button>
             ) : canBook ? (
-              <button onClick={() => setShowBookingModal(true)} className="btn-primary px-4 py-2">
+              <button
+                onClick={() => setShowBookingModal(true)}
+                className="btn-primary px-4 py-2"
+              >
                 Book
               </button>
             ) : (
@@ -668,18 +707,27 @@ const ScrimDetail = () => {
             <div className="bg-gray-800 rounded-lg max-w-md w-full p-6 ring-1 ring-white/10">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-lg font-semibold">Room Credentials</h3>
-                <button onClick={() => setRoomCredentials(null)} className="text-gray-400 hover:text-white">
+                <button
+                  onClick={() => setRoomCredentials(null)}
+                  className="text-gray-400 hover:text-white"
+                >
                   <X className="h-5 w-5" />
                 </button>
               </div>
 
               <div className="space-y-3 mb-6">
                 <div className="bg-gray-700 rounded-lg p-3">
-                  <label className="text-xs text-gray-400 uppercase tracking-wide">Room ID</label>
+                  <label className="text-xs text-gray-400 uppercase tracking-wide">
+                    Room ID
+                  </label>
                   <div className="flex items-center justify-between">
-                    <code className="text-gaming-cyan font-mono">{roomCredentials.roomId}</code>
+                    <code className="text-gaming-cyan font-mono">
+                      {roomCredentials.roomId}
+                    </code>
                     <button
-                      onClick={() => navigator.clipboard.writeText(roomCredentials.roomId)}
+                      onClick={() =>
+                        navigator.clipboard.writeText(roomCredentials.roomId)
+                      }
                       className="text-xs text-gray-400 hover:text-white"
                     >
                       Copy
@@ -687,11 +735,19 @@ const ScrimDetail = () => {
                   </div>
                 </div>
                 <div className="bg-gray-700 rounded-lg p-3">
-                  <label className="text-xs text-gray-400 uppercase tracking-wide">Password</label>
+                  <label className="text-xs text-gray-400 uppercase tracking-wide">
+                    Password
+                  </label>
                   <div className="flex items-center justify-between">
-                    <code className="text-gaming-cyan font-mono">{roomCredentials.roomPassword}</code>
+                    <code className="text-gaming-cyan font-mono">
+                      {roomCredentials.roomPassword}
+                    </code>
                     <button
-                      onClick={() => navigator.clipboard.writeText(roomCredentials.roomPassword)}
+                      onClick={() =>
+                        navigator.clipboard.writeText(
+                          roomCredentials.roomPassword
+                        )
+                      }
                       className="text-xs text-gray-400 hover:text-white"
                     >
                       Copy
@@ -700,7 +756,10 @@ const ScrimDetail = () => {
                 </div>
               </div>
 
-              <button onClick={() => setRoomCredentials(null)} className="w-full btn-primary">
+              <button
+                onClick={() => setRoomCredentials(null)}
+                className="w-full btn-primary"
+              >
                 Got it!
               </button>
             </div>
@@ -714,6 +773,8 @@ const ScrimDetail = () => {
           onClose={() => setShowBookingModal(false)}
           onBookingSuccess={handleBookingSuccess}
         />
+
+        
 
         {/* Rating Modals */}
         <RatingModal
@@ -737,10 +798,14 @@ const ScrimDetail = () => {
               <h3 className="text-lg font-semibold mb-4">Delete Scrim</h3>
               <p className="text-gray-300 mb-6">
                 Are you sure you want to delete "
-                <span className="font-medium">{scrim.title}</span>"? This action cannot be undone.
+                <span className="font-medium">{scrim.title}</span>"? This action
+                cannot be undone.
               </p>
               <div className="flex gap-3">
-                <button onClick={() => setShowDeleteConfirm(false)} className="flex-1 btn-secondary">
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="flex-1 btn-secondary"
+                >
                   Cancel
                 </button>
                 <button
