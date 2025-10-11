@@ -26,7 +26,7 @@ import {
 const router = express.Router();
 
 // Public routes
-router.get('/', getScrimsList);
+router.get('/',optionalAuth, getScrimsList);
 router.get('/:id', optionalAuth, getScrimDetails);
 
 
