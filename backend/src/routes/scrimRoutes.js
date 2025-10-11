@@ -1,5 +1,5 @@
 import express from 'express';
-import { authenticate, roleGuard } from '../middlewares/auth.js';
+import { authenticate,optionalAuth, roleGuard } from '../middlewares/auth.js';
 import {
   createScrim,
   createScrimValidation,
@@ -27,7 +27,7 @@ const router = express.Router();
 
 // Public routes
 router.get('/', getScrimsList);
-router.get('/:id', authenticate, getScrimDetails);
+router.get('/:id', optionalAuth, getScrimDetails);
 
 
 // Protected routes

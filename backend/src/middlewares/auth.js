@@ -106,3 +106,21 @@ export const requireAdminOrOrg = [authenticate, roleGuard(['admin', 'organizatio
 //     return res.status(401).json({ message: 'Invalid/expired token' });
 //   }
 // };
+
+
+export const optionalAuth = async (req, res, next) => {
+  try {
+    const raw = req.header('Authorization') || '';
+    const token = raw.startsWith('Bearer ') ? raw.slice(7) : '';
+    if (!token) return next(); // no user, but continue
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const id = decoded.userId || decoded.uid;
+    const user = await User.findById(id);
+    if (user) req.user = user;
+    return next();
+  } catch {
+    // bad/expired token → treat as guest instead of 401
+    return next();
+  }
+};

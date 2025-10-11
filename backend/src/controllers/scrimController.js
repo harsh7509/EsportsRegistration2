@@ -249,28 +249,11 @@ export const getScrimsList = async (req, res) => {
 
     const total = await Scrim.countDocuments(filter);
 
-     let bookedScrimIds = [];
-let paidScrimIds = [];
-if (req.user?._id && scrims.length) {
-  const ids = scrims.map(s => s._id);
-  const myBookings = await Booking.find({
-    playerId: req.user._id,
-    status: 'active',
-    scrimId: { $in: ids }
-  }).select('scrimId paid').lean();
-
-
-  bookedScrimIds = myBookings.map(b => String(b.scrimId));
-  paidScrimIds = myBookings.filter(b => b.paid).map(b => String(b.scrimId));
-}
-
     res.json({
       items: scrims,
       total,
       page: parseInt(page),
       totalPages: Math.ceil(total / parseInt(limit)),
-      bookedScrimIds,      // ⬅️ NEW
-  paidScrimIds  
     });
   } catch (error) {
     console.error('Get scrims error:', error);
@@ -283,6 +266,11 @@ export const getScrimDetails = async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user?._id;
+
+    // Guard: invalid ObjectId → 400 instead of 500
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ message: 'Invalid scrim id' });
+    }
 
     const scrim = await Scrim.findById(id)
       .populate('createdBy', 'name organizationInfo')
@@ -302,21 +290,8 @@ export const getScrimDetails = async (req, res) => {
       isBooked = !!booking;
     }
 
-    
- [scrim, booking] = await Promise.all([
-  Scrim.findById(id).lean(),
-  Booking.findOne({ scrimId: id, playerId: req.user._id, paid: true }).lean()
-]);
-
-isBooked =
-  !!booking ||
-  (scrim?.participants || []).some(u => String(u) === String(req.user._id));
-
-res.json({ scrim, isBooked, booking });
-
-
      // NEW: if paid but booking not present yet, treat as booked and self-heal
-      if (!isBooked && Number(scrim.entryFee) > 0) {
+      if (userId && !isBooked && Number(scrim.entryFee) > 0) {
         const paid = await Payment.findOne({
           scrimId: id,
           playerId: userId,
@@ -339,7 +314,7 @@ if (bookingLean) {
 
     const scrimData = scrim.toObject();
     if (scrimData.room && scrimData.room.password) {
-      const isOwner = userId && scrim.createdBy._id.toString() === userId.toString();
+      const isOwner = userId && String(scrim.createdBy?._id) === String(userId);
       if (!isOwner && !isBooked) delete scrimData.room.password;
     }
 
