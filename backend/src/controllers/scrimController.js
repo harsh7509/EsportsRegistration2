@@ -249,11 +249,28 @@ export const getScrimsList = async (req, res) => {
 
     const total = await Scrim.countDocuments(filter);
 
+     let bookedScrimIds = [];
+let paidScrimIds = [];
+if (req.user?._id && scrims.length) {
+  const ids = scrims.map(s => s._id);
+  const myBookings = await Booking.find({
+    playerId: req.user._id,
+    status: 'active',
+    scrimId: { $in: ids }
+  }).select('scrimId paid').lean();
+
+
+  bookedScrimIds = myBookings.map(b => String(b.scrimId));
+  paidScrimIds = myBookings.filter(b => b.paid).map(b => String(b.scrimId));
+}
+
     res.json({
       items: scrims,
       total,
       page: parseInt(page),
       totalPages: Math.ceil(total / parseInt(limit)),
+      bookedScrimIds,      // ⬅️ NEW
+  paidScrimIds  
     });
   } catch (error) {
     console.error('Get scrims error:', error);

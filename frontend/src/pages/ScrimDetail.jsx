@@ -183,6 +183,9 @@ const ScrimDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const { search } = useLocation();
+  const qs = new URLSearchParams(search);
+  const paidLanding = qs.get("paid") === "1" || qs.get("paid") === "true";
 
   const { user, isAuthenticated } = useAuth();
   const { socket } = useSocket();
@@ -235,6 +238,16 @@ const ScrimDetail = () => {
   useEffect(() => {
     if (!socket || !scrim?._id) return;
     socket.emit("join-scrim", scrim._id);
+
+    useEffect(() => {
+  if (!paidLanding || !scrim?._id) return;
+  setShowRoom(true);
+  // This will also auto-enroll them into the room if needed (your backend does it)
+  handleViewRoom();
+  // optional: toast
+  // toast.success("Payment confirmed — opening your room.");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [paidLanding, scrim]);
     const onAdded = (data) => {
       if (data?.scrimId === scrim._id) {
         setScrim((prev) => ({
