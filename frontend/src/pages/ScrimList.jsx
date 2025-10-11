@@ -146,7 +146,6 @@ const ScrimList = () => {
 
   // ✅ NEW: create-scrim modal state
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [bookedIds, setBookedIds] = useState(() => new Set());
 
   useEffect(() => {
     fetchScrims(); /* eslint-disable-next-line */
@@ -159,8 +158,6 @@ const ScrimList = () => {
       const data = response?.data || {};
       setScrims(data.items || []);
       setTotalPages(data.totalPages || 1);
-       const ids = (data.bookedScrimIds || []).map(String);
-    setBookedIds(new Set(ids));
     } catch {
       setScrims([]);
       setTotalPages(1);
@@ -659,27 +656,17 @@ const ScrimList = () => {
                                 >
                                   Details
                                 </Link>
-
-                                {user && user.role === "player" && !pastStrict && (
-  bookedIds.has(String(scrim._id)) ? (
-    <Link
-      to={`/scrims/${scrim._id}`}
-      className="flex-1 rounded-lg bg-emerald-600 text-white text-center py-2 font-medium hover:bg-emerald-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
-      title="You are registered"
-    >
-      ✓ Registered
-    </Link>
-  ) : (
-    <button
-      onClick={() => handleBookSlot(scrim._id)}
-      disabled={full}
-      className="flex-1 rounded-lg bg-emerald-500/90 text-white py-2 font-medium hover:bg-emerald-400 disabled:bg-white/10 disabled:text-white/40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
-    >
-      {full ? "Full" : "Book"}
-    </button>
-  )
-)}
-
+                                {user &&
+                                  user.role === "player" &&
+                                  !pastStrict && (
+                                    <button
+                                      onClick={() => handleBookSlot(scrim._id)}
+                                      disabled={full}
+                                      className="flex-1 rounded-lg bg-emerald-500/90 text-white py-2 font-medium hover:bg-emerald-400 disabled:bg-white/10 disabled:text-white/40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+                                    >
+                                      {full ? "Full" : "Book"}
+                                    </button>
+                                  )}
                               </div>
                             </motion.div>
                           );
