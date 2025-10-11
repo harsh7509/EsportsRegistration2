@@ -183,6 +183,9 @@ const ScrimDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const { search } = useLocation();
+  const qs = new URLSearchParams(search);
+  const paidLanding = qs.get("paid") === "1" || qs.get("paid") === "true";
 
   const { user, isAuthenticated } = useAuth();
   const { socket } = useSocket();
@@ -221,6 +224,8 @@ const ScrimDetail = () => {
     fetchScrimDetails(); /* eslint-disable-next-line */
   }, [id]);
 
+
+
   // After Cashfree redirect (?paid=1 or ?status=PAID), refresh and show success
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -231,6 +236,7 @@ const ScrimDetail = () => {
       fetchScrimDetails();
     }
   }, [location.search]);
+  
 
   useEffect(() => {
     if (!socket || !scrim?._id) return;
