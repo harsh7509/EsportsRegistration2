@@ -63,19 +63,28 @@ const RoomView = ({ scrimId, isOwner }) => {
   }, [messages]);
 
   // 🔔 Socket: join scrim room & listen for new messages
- useEffect(() => {
-   if (!socket || !resolvedScrimId) return;
-   socket.emit('join-scrim', resolvedScrimId);
-     const join = () => socket.emit('join-scrim', roomId);
-  join();                  // initial mount
-  socket.on('connect', join); 
-     const onRoomMessage = (evt) => {
-     if (evt?.scrimId !== resolvedScrimId) return;
-     setMessages((prev) => [...prev, evt.message]);
-   };
-   socket.on('room:message', onRoomMessage);
-   return () => socket.off('room:message', onRoomMessage);
- }, [socket, resolvedScrimId]);
+ // 🔔 Socket: join scrim room & listen for new messages
+useEffect(() => {
+  if (!socket || !resolvedScrimId) return;
+
+  const join = () => socket.emit('join-scrim', resolvedScrimId);
+
+  // join now, and re-join if the socket reconnects
+  join();
+  socket.on('connect', join);
+
+  const onRoomMessage = (evt) => {
+    if (evt?.scrimId !== resolvedScrimId) return;
+    setMessages((prev) => [...prev, evt.message]);
+  };
+  socket.on('room:message', onRoomMessage);
+
+  return () => {
+    socket.off('connect', join);
+    socket.off('room:message', onRoomMessage);
+  };
+}, [socket, resolvedScrimId]);
+ 
 
   const fetchMessages = async (sid) => {
     if (!sid) return;
