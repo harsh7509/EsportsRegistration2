@@ -13,6 +13,7 @@ import {
   Clock,
   ShieldCheck,
   ArrowLeft,
+  plus,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useSocket } from "../context/SocketContext";
@@ -292,6 +293,7 @@ const ScrimDetail = () => {
   const isFull = joined >= capacity;
   const bookedPaid = isBooked || !!booking?.paid; // unified “I’m in” flag
   const isOwner = user && scrim.createdBy?._id === (user.id || user._id);
+  const isOrg = isAuthenticated && user?.role === "organization";
 
   const startDate = toValidDate(start);
   const endDate = toValidDate(end);
@@ -395,6 +397,15 @@ const ScrimDetail = () => {
                     Rank {Number(scrim.rankScore).toFixed(1)}
                   </StatPill>
                 )}
+                {isOrg && (
+        <button
+          onClick={() => navigate("/scrims/create")}
+          className="inline-flex items-center gap-2 bg-gaming-purple/80 hover:bg-gaming-purple text-white px-3 py-1.5 rounded-lg text-sm transition-colors"
+          title="Create a new scrim"
+        >
+          <Plus className="h-4 w-4" /> Create Scrim
+        </button>
+      )}
               </div>
             </div>
 
@@ -556,6 +567,7 @@ const ScrimDetail = () => {
                       onClick={handleViewRoom}
                       className="w-full btn-primary"
                     >
+                      
                       <Lock className="h-4 w-4 mr-2" /> View Room Credentials
                     </button>
                     <button
@@ -698,6 +710,15 @@ const ScrimDetail = () => {
                 Closed
               </button>
             )}
+            {isOrg && (
+        <button
+          onClick={() => navigate("/scrims/create")}
+          className="inline-flex items-center gap-2 bg-gaming-purple/80 hover:bg-gaming-purple text-white px-3 py-1.5 rounded-lg text-sm transition-colors"
+          title="Create a new scrim"
+        >
+          <Plus className="h-4 w-4" /> Create Scrim
+        </button>
+      )}
           </div>
         </div>
 
