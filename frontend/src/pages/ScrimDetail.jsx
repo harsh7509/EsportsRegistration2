@@ -4,7 +4,7 @@ import {
   Calendar,
   Users,
   Trophy,
-  DollarSign,
+  IndianRupeeIcon,
   Lock,
   ExternalLink,
   MessageSquare,
@@ -183,6 +183,9 @@ const ScrimDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const { search } = useLocation();
+  const qs = new URLSearchParams(search);
+  const paidLanding = qs.get("paid") === "1" || qs.get("paid") === "true";
 
   const { user, isAuthenticated } = useAuth();
   const { socket } = useSocket();
@@ -221,6 +224,8 @@ const ScrimDetail = () => {
     fetchScrimDetails(); /* eslint-disable-next-line */
   }, [id]);
 
+
+
   // After Cashfree redirect (?paid=1 or ?status=PAID), refresh and show success
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -231,6 +236,17 @@ const ScrimDetail = () => {
       fetchScrimDetails();
     }
   }, [location.search]);
+
+  // When returning from payment (?paid=1), auto-open the room panel and fetch credentials once the scrim is loaded.
+useEffect(() => {
+  if (!paidLanding || !scrim?._id) return;
+  setShowRoom(true);
+  // This will also auto-enroll them into the room if needed (your backend does it)
+  handleViewRoom();
+  // optional: toast
+  // toast.success("Payment confirmed — opening your room.");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [paidLanding, scrim]);
 
   useEffect(() => {
     if (!socket || !scrim?._id) return;
@@ -419,14 +435,14 @@ const ScrimDetail = () => {
                     {joined}/{capacity} players
                   </StatPill>
                   {Number(scrim.entryFee) > 0 ? (
-                    <StatPill icon={DollarSign} tone="yellow">
+                    <StatPill icon={IndianRupeeIcon} tone="yellow">
                       ₹
                       {Number(scrim.entryFee || scrim.price).toLocaleString(
                         "en-IN"
                       )}
                     </StatPill>
                   ) : (
-                    <StatPill icon={DollarSign} tone="green">
+                    <StatPill icon={IndianRupeeIcon} tone="green">
                       Free
                     </StatPill>
                   )}

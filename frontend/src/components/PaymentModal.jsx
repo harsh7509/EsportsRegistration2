@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, CreditCard, DollarSign, Smartphone, Globe } from 'lucide-react';
+import { X, CreditCard, IndianRupeeIcon, Smartphone, Globe } from 'lucide-react';
 import { scrimsAPI } from '../services/api';
 import toast from 'react-hot-toast';
 
@@ -139,7 +139,7 @@ const PaymentModal = ({ scrim, isOpen, onClose, onPaymentSuccess }) => {
           <div className="flex items-center justify-between">
             <span className="text-sm text-white/70">Entry Fee</span>
             <span className="inline-flex items-center gap-1 text-2xl font-bold text-emerald-300">
-              <DollarSign className="h-5 w-5" />
+              <IndianRupeeIcon className="h-5 w-5" />
               {amount}
             </span>
           </div>
