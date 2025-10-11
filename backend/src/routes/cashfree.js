@@ -45,12 +45,12 @@ router.post("/create-order", async (req, res) => {
           customer_phone: customer?.phone || "9999999999",
         },
         order_meta: {
-   // Force Cashfree to append these values when redirecting back
+   // ✅ Cashfree allows {order_id} and {order_status}. {order_token} is deprecated.
    return_url:
      `${process.env.BACKEND_PUBLIC_URL}/api/payments/cf/return`
      + `?scrim=${encodeURIComponent(scrimId || "")}`
      + `&player=${encodeURIComponent(playerId || customer?.id || "")}`
-     + `&order_id={order_id}&order_token={order_token}&status={order_status}`,
+     + `&order_id={order_id}&status={order_status}`,
    notify_url: `${process.env.BACKEND_PUBLIC_URL}/api/payments/cf/webhook`,
    payment_methods: "upi",
  },
