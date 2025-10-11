@@ -45,7 +45,7 @@ router.post("/create-order", async (req, res) => {
           customer_phone: customer?.phone || "9999999999",
         },
         order_meta: {
-          return_url: process.env.CF_RETURN_URL,
+          return_url: `${process.env.BACKEND_PUBLIC_URL}/api/payments/cf/return`,
           notify_url: `${process.env.BACKEND_PUBLIC_URL}/api/payments/cf/webhook`,
           payment_methods: "upi",
         },

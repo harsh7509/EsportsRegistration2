@@ -302,6 +302,19 @@ export const getScrimDetails = async (req, res) => {
       isBooked = !!booking;
     }
 
+    
+ [scrim, booking] = await Promise.all([
+  Scrim.findById(id).lean(),
+  Booking.findOne({ scrimId: id, playerId: req.user._id, paid: true }).lean()
+]);
+
+isBooked =
+  !!booking ||
+  (scrim?.participants || []).some(u => String(u) === String(req.user._id));
+
+res.json({ scrim, isBooked, booking });
+
+
      // NEW: if paid but booking not present yet, treat as booked and self-heal
       if (!isBooked && Number(scrim.entryFee) > 0) {
         const paid = await Payment.findOne({

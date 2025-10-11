@@ -30,7 +30,7 @@ export const createKickRequest = async (req, res) => {
       return res.status(400).json({ message: 'targetName is required' });
     }
 
-    const scrim = await Scrim.findById(id);
+     scrim = await Scrim.findById(id);
     if (!scrim) return res.status(404).json({ message: 'Scrim not found' });
 
     // player must be a participant of this scrim
@@ -48,6 +48,21 @@ export const createKickRequest = async (req, res) => {
     if (hasDuplicate) {
       return res.status(409).json({ message: 'A pending request already exists for this slot/player' });
     }
+
+    // controllers/kick.RequestController.js (pseudo)
+const [scrim, booking] = await Promise.all([
+  Scrim.findById(id).select("participants").lean(),
+  Booking.findOne({ scrimId: id, playerId: req.user._id, paid: true }).lean()
+]);
+
+const isParticipant =
+  (scrim?.participants || []).some(u => String(u) === String(req.user._id)) ||
+  !!booking;
+
+if (!isParticipant) {
+  return res.status(403).json({ message: "Only participants can create kick requests" });
+}
+
 
     const request = {
       requester: userId,
