@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { useNavigate, useParams, Link } from "react-router-dom";
+import { useNavigate, useParams, Link, useLocation } from "react-router-dom";
 import {
   Calendar,
   Users,
@@ -182,6 +182,7 @@ const Countdown = ({ startISO }) => {
 const ScrimDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const { user, isAuthenticated } = useAuth();
   const { socket } = useSocket();
@@ -189,6 +190,7 @@ const ScrimDetail = () => {
   // ---------- state ----------
   const [scrim, setScrim] = useState(null);
   const [isBooked, setIsBooked] = useState(false);
+  const [booking, setBooking] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const [showBookingModal, setShowBookingModal] = useState(false);
@@ -206,6 +208,7 @@ const ScrimDetail = () => {
       const response = await scrimsAPI.getDetails(id);
       setScrim(response.data.scrim);
       setIsBooked(response.data.isBooked);
+      setBooking(response.data.booking ?? null);
     } catch (error) {
       console.error("Failed to fetch scrim details:", error);
       toast.error("Failed to load scrim details");
@@ -217,6 +220,17 @@ const ScrimDetail = () => {
   useEffect(() => {
     fetchScrimDetails(); /* eslint-disable-next-line */
   }, [id]);
+
+  // After Cashfree redirect (?paid=1 or ?status=PAID), refresh and show success
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const paid = params.get("paid");
+    const status = (params.get("status") || "").toUpperCase();
+    if (paid === "1" || status === "PAID") {
+      toast.success("Payment confirmed! You’re registered.");
+      fetchScrimDetails();
+    }
+  }, [location.search]);
 
   useEffect(() => {
     if (!socket || !scrim?._id) return;
@@ -276,6 +290,7 @@ const ScrimDetail = () => {
   const capacity = Number(scrim.capacity || 0);
   const joined = Number(scrim.participants?.length || 0);
   const isFull = joined >= capacity;
+  const bookedPaid = isBooked || !!booking?.paid; // unified “I’m in” flag
   const isOwner = user && scrim.createdBy?._id === (user.id || user._id);
 
   const startDate = toValidDate(start);
@@ -321,8 +336,8 @@ const ScrimDetail = () => {
    fetchScrimDetails();
  };
 
+  // (remove this function or keep only the lines below if you ever call it)
   const handlePaymentSuccess = () => {
-    setShowPaymentModal(false);
     fetchScrimDetails();
     toast.success("You have been added to the scrim room!");
   };
@@ -530,7 +545,7 @@ const ScrimDetail = () => {
 
               {/* Actions */}
               <div className="space-y-3">
-                {isBooked ? (
+                {bookedPaid ? (
                   <>
                     <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-3 text-center">
                       <span className="text-emerald-300 font-medium">
@@ -664,7 +679,7 @@ const ScrimDetail = () => {
             <div className="flex-1">
               <Progress value={joined} max={capacity || 1} />
             </div>
-            {isBooked ? (
+            {bookedPaid ? (
               <button
                 onClick={handleViewRoom}
                 className="btn-primary px-4 py-2"

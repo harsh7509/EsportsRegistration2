@@ -285,6 +285,23 @@ export const getScrimDetails = async (req, res) => {
       isBooked = !!booking;
     }
 
+     // NEW: if paid but booking not present yet, treat as booked and self-heal
+      if (!isBooked && Number(scrim.entryFee) > 0) {
+        const paid = await Payment.findOne({
+          scrimId: id,
+          playerId: userId,
+          status: 'completed',
+        });
+        if (paid) {
+          isBooked = true;
+          booking = await Booking.findOneAndUpdate(
+            { scrimId: id, playerId: userId },
+            { $setOnInsert: { status: 'active', paid: true, bookedAt: new Date() } },
+            { new: true, upsert: true }
+          ).populate('playerId', 'name email');
+        }
+      }
+
     const bookingLean = booking ? booking.toObject() : null;
 if (bookingLean) {
   bookingLean.bookedAt = bookingLean.bookedAt || bookingLean.createdAt || bookingLean.updatedAt || new Date(0);
@@ -296,7 +313,7 @@ if (bookingLean) {
       if (!isOwner && !isBooked) delete scrimData.room.password;
     }
 
-    res.json({ scrim: scrimData, isBooked, booking:bookingLean });
+    res.json({ scrim: scrimData, isBooked, booking: bookingLean });
   } catch (error) {
     console.error('Get scrim details error:', error);
     res.status(500).json({ message: 'Server error fetching scrim details' });
