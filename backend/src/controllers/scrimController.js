@@ -249,12 +249,37 @@ export const getScrimsList = async (req, res) => {
 
     const total = await Scrim.countDocuments(filter);
 
-    res.json({
-      items: scrims,
-      total,
-      page: parseInt(page),
-      totalPages: Math.ceil(total / parseInt(limit)),
-    });
+    // If user is present (optionalAuth), mark which items they booked
+   let items = scrims.map(s => s.toObject());
+let bookedScrimIds = [];
+const userId = req.user?._id;
+
+if (userId && items.length) {
+  const ids = items.map(i => i._id);
+  // active bookings for this user
+  const my = await Booking.find({
+    playerId: userId,
+    scrimId: { $in: ids },
+    status: 'active',
+  }).select('scrimId').lean();
+
+  const set = new Set(my.map(b => String(b.scrimId)));
+  bookedScrimIds = Array.from(set);
+
+  // also set a per-item flag (handy for future UI)
+  items = items.map(i => ({
+    ...i,
+    isBooked: set.has(String(i._id)),
+  }));
+}
+
+return res.json({
+  items,
+  bookedScrimIds,              // 👈 client expects this
+  total,
+  page: parseInt(page),
+  totalPages: Math.ceil(total / parseInt(limit)),
+});
   } catch (error) {
     console.error('Get scrims error:', error);
     res.status(500).json({ message: 'Server error fetching scrims' });
@@ -306,6 +331,12 @@ export const getScrimDetails = async (req, res) => {
           ).populate('playerId', 'name email');
         }
       }
+
+      if (userId && !isBooked && Array.isArray(scrim.participants)) {
+      const uid = String(userId);
+      const inList = scrim.participants.some(p => String(p?._id || p) === uid);
+      if (inList) isBooked = true;
+    }
 
     const bookingLean = booking ? booking.toObject() : null;
 if (bookingLean) {

@@ -13,7 +13,7 @@ import {
   Clock,
   ShieldCheck,
   ArrowLeft,
-  plus,
+  Plus,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useSocket } from "../context/SocketContext";

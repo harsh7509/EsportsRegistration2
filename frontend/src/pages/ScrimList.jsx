@@ -153,7 +153,9 @@ const ScrimList = () => {
   const fetchScrims = async () => {
     setLoading(true);
     try {
-      const response = await scrimsAPI.getList(filters);
+      const response = await scrimsAPI.getList(filters, {
+  headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+});
       const data = response?.data || {};
       setScrims(data.items || []);
       setTotalPages(data.totalPages || 1);
