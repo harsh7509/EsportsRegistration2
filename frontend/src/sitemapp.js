@@ -23,3 +23,5 @@ const { createWriteStream } = require('fs');
   createWriteStream('./public/sitemap.xml').write(data);
   console.log('✅ Sitemap created: /public/sitemap.xml');
 })();
+
+
