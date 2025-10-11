@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Calendar, Users, Trophy, DollarSign } from 'lucide-react';
+import { Calendar, Users, Trophy, IndianRupee } from 'lucide-react';
 
 const ScrimCard = ({ scrim }) => {
   // Prefer full timeslot
@@ -117,7 +117,7 @@ const ScrimCard = ({ scrim }) => {
 
           {entryPaid && (
             <div className="flex items-center text-sm text-emerald-300">
-              <DollarSign className="h-4 w-4 mr-2" />
+              <IndianRupee className="h-4 w-4 mr-2" />
               ₹{scrim.entryFee}
             </div>
           )}

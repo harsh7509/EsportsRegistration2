@@ -8,7 +8,7 @@ import {
   Calendar,
   Trophy,
   Pencil,
-  CircleDollarSign,
+  BadgeIndianRupee,
   Trash2,
   AlertTriangle,
 } from "lucide-react";
@@ -272,7 +272,7 @@ export default function EditTournament() {
                 Prize Pool
               </label>
               <div className="relative">
-                <CircleDollarSign className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <BadgeIndianRupee className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   className="w-full rounded-xl bg-white/[0.06] border border-white/10 pl-10 pr-3 py-2.5 outline-none focus:ring-2 focus:ring-gaming-purple/50"
                   value={form.prizePool}

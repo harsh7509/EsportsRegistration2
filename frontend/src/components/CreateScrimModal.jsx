@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { X, Calendar, Users, DollarSign, Gamepad2, Hash } from 'lucide-react';
+import { X, Calendar, Users, IndianRupee, Gamepad2, Hash } from 'lucide-react';
 import { scrimsAPI } from '../services/api';
 import toast from 'react-hot-toast';
 
@@ -344,11 +344,11 @@ const CreateScrimModal = ({ isOpen, onClose, onScrimCreated }) => {
               <div>
                 <label className="mb-1.5 block text-xs text-white/70">
                   <span className="inline-flex items-center gap-1">
-                    <DollarSign className="h-4 w-4" /> Entry Fee (₹)
+                    <IndianRupee className="h-4 w-4" /> Entry Fee (₹)
                   </span>
                 </label>
                 <div className="relative">
-                  <DollarSign className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/50" />
+                  <IndianRupee className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/50" />
                   <input
                     type="number"
                     name="entryFee"
@@ -368,7 +368,7 @@ const CreateScrimModal = ({ isOpen, onClose, onScrimCreated }) => {
               <div>
                 <label className="mb-1.5 block text-xs text-white/70">Prize Pool (₹)</label>
                 <div className="relative">
-                  <DollarSign className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/50" />
+                  <IndianRupee className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/50" />
                   <input
                     type="number"
                     name="prizePool"

@@ -12,7 +12,7 @@ import {
   Save,
   X,
   Trophy,
-  CircleDollarSign,
+  BadgeIndianRupee,
   Eye,
 } from 'lucide-react';
 import { adminAPI, authAPI, uploadAPI } from '../services/api';
@@ -650,7 +650,7 @@ const handleRemoveParticipant = async (participantId) => {
               { id: 'scrims', label: 'Scrims', icon: Calendar },
               { id: 'tournaments', label: 'Tournaments', icon: Trophy },
               { id: 'bookings', label: 'Bookings', icon: Calendar },
-              { id: 'payments', label: 'Payments', icon: CircleDollarSign },
+              { id: 'payments', label: 'Payments', icon: BadgeIndianRupee },
               { id: 'ratings', label: 'Ratings', icon: Star },
               { id: 'kyc', label: 'KYC', icon: Shield },
             ].map(({ id, label, icon: Icon }) => (
