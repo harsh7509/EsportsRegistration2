@@ -249,8 +249,6 @@ export const getScrimsList = async (req, res) => {
 
     const total = await Scrim.countDocuments(filter);
 
-    
-
     res.json({
       items: scrims,
       total,

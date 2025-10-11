@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useState } from 'react';
 import { MessageSquare, Send, Lock, Upload, RotateCw } from 'lucide-react';
 import { scrimsAPI, uploadAPI } from '../services/api';
