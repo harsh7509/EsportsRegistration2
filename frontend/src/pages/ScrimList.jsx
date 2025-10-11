@@ -34,10 +34,9 @@ const Chip = ({ active, onClick, children }) => (
     className={`px-3.5 py-2 rounded-2xl text-sm font-medium transition-all
       focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2
       focus-visible:ring-white/40 focus-visible:ring-offset-[#0b0b12]
-      ${
-        active
-          ? "bg-white text-gray-900 shadow"
-          : "bg-white/5 text-white/80 hover:bg-white/10 border border-white/10"
+      ${active
+        ? "bg-white text-gray-900 shadow"
+        : "bg-white/5 text-white/80 hover:bg-white/10 border border-white/10"
       }`}
   >
     {children}
@@ -85,11 +84,10 @@ const FeePill = ({ fee }) => {
   return (
     <span
       className={`px-2 py-1 rounded text-[11px] font-medium whitespace-nowrap
-      ${
-        paid
+      ${paid
           ? "bg-cyan-500/10 text-cyan-300"
           : "bg-emerald-500/10 text-emerald-300"
-      }`}
+        }`}
       aria-label={paid ? `Entry fee ₹${fee}` : "Free scrim"}
       title={paid ? `Entry fee ₹${fee}` : "Free scrim"}
     >
@@ -146,6 +144,7 @@ const ScrimList = () => {
 
   // ✅ NEW: create-scrim modal state
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [bookedIds, setBookedIds] = useState(() => new Set());
 
   useEffect(() => {
     fetchScrims(); /* eslint-disable-next-line */
@@ -158,6 +157,8 @@ const ScrimList = () => {
       const data = response?.data || {};
       setScrims(data.items || []);
       setTotalPages(data.totalPages || 1);
+      const ids = (data.bookedScrimIds || []).map(String);
+      setBookedIds(new Set(ids));
     } catch {
       setScrims([]);
       setTotalPages(1);
@@ -586,14 +587,12 @@ const ScrimList = () => {
 
                     {/* Horizontal row */}
                     <div
-                      className={`${
-                        shouldScroll ? "overflow-x-auto" : "overflow-x-hidden"
-                      } -mx-2 px-2`}
+                      className={`${shouldScroll ? "overflow-x-auto" : "overflow-x-hidden"
+                        } -mx-2 px-2`}
                     >
                       <div
-                        className={`flex gap-4 ${
-                          shouldScroll ? "snap-x snap-mandatory" : ""
-                        }`}
+                        className={`flex gap-4 ${shouldScroll ? "snap-x snap-mandatory" : ""
+                          }`}
                         style={{ paddingBottom: 2 }}
                         role="list"
                       >
@@ -614,9 +613,8 @@ const ScrimList = () => {
                                 damping: 20,
                               }}
                               className={`min-w-[260px] max-w-[300px] rounded-xl border border-white/10 bg-white/5 p-4 backdrop-blur
-                              ${shouldScroll ? "snap-start" : ""} ${
-                                pastStrict ? "opacity-60" : ""
-                              }`}
+                              ${shouldScroll ? "snap-start" : ""} ${pastStrict ? "opacity-60" : ""
+                                }`}
                             >
                               <div className="flex items-start justify-between gap-2 mb-2">
                                 <h4
@@ -656,9 +654,16 @@ const ScrimList = () => {
                                 >
                                   Details
                                 </Link>
-                                {user &&
-                                  user.role === "player" &&
-                                  !pastStrict && (
+                                {user && user.role === "player" && !pastStrict && (
+                                  bookedIds.has(String(scrim._id)) ? (
+                                    <Link
+                                      to={`/scrims/${scrim._id}`}
+                                      className="flex-1 rounded-lg bg-emerald-600 text-white text-center py-2 font-medium hover:bg-emerald-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+                                      title="You are registered"
+                                    >
+                                      ✓ Registered
+                                    </Link>
+                                  ) : (
                                     <button
                                       onClick={() => handleBookSlot(scrim._id)}
                                       disabled={full}
@@ -666,7 +671,8 @@ const ScrimList = () => {
                                     >
                                       {full ? "Full" : "Book"}
                                     </button>
-                                  )}
+                                  )
+                                )}
                               </div>
                             </motion.div>
                           );
@@ -701,11 +707,10 @@ const ScrimList = () => {
                     key={i}
                     onClick={() => handlePageChange(i + 1)}
                     className={`h-9 w-9 rounded-xl text-sm font-medium
-                    ${
-                      filters.page === i + 1
+                    ${filters.page === i + 1
                         ? "bg-white text-gray-900"
                         : "bg-white/5 hover:bg-white/10"
-                    }`}
+                      }`}
                     aria-current={filters.page === i + 1 ? "page" : undefined}
                   >
                     {i + 1}
