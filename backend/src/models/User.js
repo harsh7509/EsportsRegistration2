@@ -4,12 +4,12 @@ import bcrypt from "bcryptjs";
 const OrgKycSchema = new mongoose.Schema(
   {
     status: { type: String, enum: ["unsubmitted", "pending", "approved", "rejected"], default: "unsubmitted" },
-    legalName: { type: String, default: "" },
-    email: { type: String, default: "" },
-    dob: { type: Date },
-    aadhaarNumber: { type: String, default: "" },
-    aadhaarImageUrl: { type: String, default: "" },
-    selfieWithAadhaarUrl: { type: String, default: "" },
+    legalName: { type: String, default: "",required: true },
+    email: { type: String, default: "",required: true },
+    dob: { type: Date, default: null ,required: true },
+    aadhaarNumber: { type: String, default: "",required: true },
+    aadhaarImageUrl: { type: String, default: "",required: true },
+    selfieWithAadhaarUrl: { type: String, default: "",required: true },
     notes: { type: String, default: "" },
     submittedAt: { type: Date },
     reviewedAt: { type: Date },
@@ -32,7 +32,7 @@ const userSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
-    phone: { type: String, default: "" },
+    phone: { type: String, default: "", required: true, unique: true},
 
     // (hashed) password is stored here
     password: { type: String, required: true },
@@ -46,7 +46,7 @@ const userSchema = new mongoose.Schema(
     },
 
     organizationInfo: {
-      orgName: { type: String, default: "" },
+      orgName: { type: String, default: "", required: true },
       location: { type: String, default: "" },
       verified: { type: Boolean, default: false },
       ranking: { type: Number, default: 1000 },
@@ -57,9 +57,9 @@ const userSchema = new mongoose.Schema(
     orgKyc: { type: OrgKycSchema, default: () => ({}) },
 
     playerInfo: {
-      ign: { type: String },
+      ign: { type: String, required: true },
       rank: { type: String },
-      team: { type: String },
+      team: { type: String, default: "" ,required: true },
     },
 
     emailVerified: { type: Boolean, default: false },

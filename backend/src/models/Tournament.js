@@ -2,18 +2,18 @@
 import mongoose from 'mongoose';
 
 const TeamPlayerSubSchema = new mongoose.Schema({
-  slot: { type: Number },         // 1..5
-  ignName: { type: String },
-  ignId: { type: String },
+  slot: { type: Number, required: true },         // 1..5
+  ignName: { type: String, required: true },
+  ignId: { type: String, required: true },
 }, { _id: false });
 
 const ParticipantSchema = new mongoose.Schema({
   userId:       { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  ign:          { type: String, default: '' },              // legacy fallback
+  ign:          { type: String, default: '', required: true },              // legacy fallback
   // NEW: contact + team info
-  realName:     { type: String, default: '' },
-  phone:        { type: String, default: '' },
-  teamName:     { type: String, default: '' },
+  realName:     { type: String, default: '',required: true },
+  phone:        { type: String, default: '',required: true },
+  teamName:     { type: String, default: '',required: true },
   players:      { type: [TeamPlayerSubSchema], default: [] },
   registeredAt: { type: Date, default: Date.now },
 }, { _id: false });
