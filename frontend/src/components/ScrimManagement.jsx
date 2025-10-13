@@ -560,13 +560,13 @@ useEffect(() => {
 
                   {req.status === 'pending' ? (
                     <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-2">
-                      <input
+                      {/* <input
                         type="text"
                         placeholder="Note (optional)"
                         className="md:col-span-2 input bg-white/5 border-white/10 text-sm"
                         value={orgNotes[req._id] || ''}
                         onChange={(e) => setOrgNotes(s => ({ ...s, [req._id]: e.target.value }))}
-                      />
+                      /> */}
                       <div className="flex gap-2">
                         <button
                           onClick={() => handleResolve(req._id, 'approve')}

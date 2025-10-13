@@ -50,21 +50,21 @@ const StatPill = ({ icon: Icon, children, tone = "default", title }) => {
   );
 };
 
-const StatusBadge = ({ status }) => {
-  const map = {
-    upcoming: { label: "Upcoming", cls: "bg-emerald-500/15 text-emerald-300" },
-    ongoing: { label: "Live Now", cls: "bg-pink-500/15 text-pink-300" },
-    completed: { label: "Completed", cls: "bg-white/10 text-white/70" },
-  };
-  const s = map[status] || map.upcoming;
-  return (
-    <span
-      className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${s.cls}`}
-    >
-      {s.label}
-    </span>
-  );
-};
+// const StatusBadge = ({ status }) => {
+//   const map = {
+//     upcoming: { label: "", cls: "bg-emerald-500/15 text-emerald-300" },
+//     ongoing: { label: "Live Now", cls: "bg-pink-500/15 text-pink-300" },
+//     completed: { label: "Completed", cls: "bg-white/10 text-white/70" },
+//   };
+//   const s = map[status] || map.upcoming;
+//   return (
+//     <span
+//       className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${s.cls}`}
+//     >
+//       {s.label}
+//     </span>
+//   );
+// };
 
 const InfoRow = ({ label, value, icon: Icon }) => (
   <div className="flex items-center justify-between text-sm">
@@ -391,7 +391,7 @@ const ScrimDetail = () => {
                 <ArrowLeft className="h-4 w-4" /> Back
               </button>
               <div className="flex items-center gap-2">
-                <StatusBadge status={scrim.status} />
+                {/* <StatusBadge status={scrim.status} /> */}
                 {Number(scrim.rankScore) > 0 && (
                   <StatPill icon={Trophy} tone="purple" title="Rank score">
                     Rank {Number(scrim.rankScore).toFixed(1)}
