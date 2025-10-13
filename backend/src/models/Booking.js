@@ -20,8 +20,8 @@ const bookingSchema = new mongoose.Schema(
     // in Scrim schema:
 participantsMeta: [{
   playerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  ign: String,
-  phone: String,
+  ign: { type: String, required: true },
+  phone: { type: Number, required: true,max:10,min:10 },
   teamName: String,
 }],
 

@@ -4,8 +4,8 @@ import mongoose from 'mongoose';
 const ParticipantsMetaSchema = new mongoose.Schema(
   {
     playerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    ign: { type: String },
-    phone: { type: String },
+    ign: { type: String, required: true },
+  phone: { type: Number, required: true,max:10,min:10 },
     teamName: { type: String },
   },
   { _id: false }
